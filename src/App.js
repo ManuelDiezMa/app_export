@@ -6,6 +6,7 @@ const INIT_ZONES = [
   { id: "soporte", name: "Soporte", ci: 1 },
   { id: "clasificacion", name: "Clasificación", ci: 2 },
   { id: "admin", name: "Admin", ci: 3 },
+  { id: "reasignacion", name: "Reasignación", ci: 4 },
 ];
 const INIT_ROLES = [
   { id: "picker_agv", name: "Picker AGV", z: "picking", type: "directo", icon: "🤖" },
@@ -16,6 +17,8 @@ const INIT_ROLES = [
   { id: "clasif_colg", name: "Clasif. Colgado", z: "clasificacion", type: "indirecto", icon: "👔" },
   { id: "clerk", name: "Clerk", z: "admin", type: "indirecto", icon: "🖥️" },
   { id: "facturacion", name: "Facturación", z: "admin", type: "indirecto", icon: "🧾" },
+  { id: "pt_reasignacion", name: "PT Reasignación", z: "reasignacion", type: "tarea_extra", icon: "🔄" },
+  { id: "housekeeping", name: "Housekeeping", z: "reasignacion", type: "tarea_extra", icon: "🧹" },
 ];
 const PAL = [
   { bg: "#dbeafe", ac: "#2563eb", hd: "#1e40af" },
@@ -125,8 +128,6 @@ function App() {
   const [snP, setSnP] = useState(0); const [snC, setSnC] = useState(0); const [snR, setSnR] = useState(0);
   const [showCfg, setShowCfg] = useState(false);
   const [now, setNow] = useState(new Date());
-  const [imgL, setImgL] = useState(false); const [imgRes, setImgRes] = useState(null);
-  const fRef = useRef(null);
   const [eZone, setEZone] = useState(null); const [eZN, setEZN] = useState("");
   const [addZoneOpen, setAddZoneOpen] = useState(false); const [nZN, setNZN] = useState("");
   const [addRZ, setAddRZ] = useState(null); const [nRN, setNRN] = useState(""); const [nRT, setNRT] = useState("indirecto");
@@ -166,50 +167,6 @@ function App() {
   // RFID: assume same rate as picking (rough estimate)
   const rfidAlFinal = hRest > 0 && salT > 0 ? Math.max(0, pR - salT * hRest) : pR;
 
-  // Image handler - fixed to support both camera and gallery
-  const handleImg = async (file) => {
-    if (!file) return;
-    setImgL(true); setImgRes(null);
-    try {
-      const b64 = await new Promise((res, rej) => {
-        const r = new FileReader();
-        r.onload = () => res(r.result.split(",")[1]);
-        r.onerror = () => rej(new Error("read failed"));
-        r.readAsDataURL(file);
-      });
-      const mediaType = file.type || "image/jpeg";
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 500,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } },
-              { type: "text", text: 'Look at this warehouse table image. Find the TOTAL row at the bottom. Extract the numbers from the columns "POR PICAR" and "POR RFID" (or similar). Return ONLY this exact JSON format with the total numbers, nothing else:\n{"total_picar":0,"total_rfid":0}' }
-            ]
-          }]
-        })
-      });
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`API ${response.status}: ${errText.substring(0, 100)}`);
-      }
-      const data = await response.json();
-      const text = (data.content || []).map(i => i.text || "").join("");
-      const clean = text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
-      setImgRes(parsed);
-      if (parsed.total_picar) setPP(parsed.total_picar);
-      if (parsed.total_rfid) setPR(parsed.total_rfid);
-    } catch (err) {
-      setImgRes({ error: `Error: ${err.message || "No se pudo leer"}. Introduce los datos manualmente.` });
-    }
-    setImgL(false);
-  };
-
   const addSn = () => {
     const picar = snP || pP, clasif = snC || pC, rfid = snR || pR;
     setSnaps(p => [...p, { hora: hAct, picar, clasif, rfid, personal: asig, salida: salT, id: Date.now() }]);
@@ -222,7 +179,7 @@ function App() {
     if (!window.confirm("¿Nuevo turno? Se borrarán todos los datos operativos.\nLa configuración (productividad, ratios, roles) se mantiene.")) return;
     setPP(0); setPC(0); setPR(0); setTG(0);
     setStaff({}); setSnaps([]);
-    setImgRes(null);
+    
   };
 
   return (
@@ -363,6 +320,23 @@ function App() {
                 ? <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "#fef2f2", color: "#991b1b" }}>⚠ Cuello de botella clasificación</div>
                 : clTot > 0 && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "#f0fdf4", color: "#065f46" }}>✓ Clasificación absorbe</div>
               }
+            </Card>
+          )}
+
+          {/* TPH */}
+          {salT > 0 && (tDir + tInd) > 0 && (
+            <Card sx={{ borderLeft: "4px solid #0d9488" }}>
+              <Lbl>TPH — Tasa de Productividad por Hora</Lbl>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <div style={{ textAlign: "center", flex: 1 }}>
+                  <div style={{ fontSize: 32, fontWeight: 800, color: "#0d9488", fontFamily: "'JetBrains Mono',monospace" }}>{(salT / (tDir + tInd)).toFixed(1)}</div>
+                  <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>uds/persona·hora</div>
+                </div>
+                <div style={{ fontSize: 11, color: "#6b7280", flex: 1 }}>
+                  <div style={{ padding: "3px 0" }}>{salT.toLocaleString()} uds procesadas/h</div>
+                  <div style={{ padding: "3px 0", borderTop: "1px solid #e5e7eb" }}>{tDir + tInd} horas hombre (dir+ind)</div>
+                </div>
+              </div>
             </Card>
           )}
 
@@ -527,29 +501,6 @@ function App() {
 
         {/* ═══ SITUACIÓN ═══ */}
         {tab === "situacion" && (<>
-          <Card>
-            <Lbl>Actualizar desde imagen</Lbl>
-            <p style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>Toma una foto o sube una imagen de la tabla.</p>
-            {/* Two buttons: camera and gallery */}
-            <div style={{ display: "flex", gap: 8 }}>
-              <div style={{ flex: 1, position: "relative" }}>
-                <input type="file" accept="image/*" capture="environment" onChange={e => handleImg(e.target.files?.[0])} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }} />
-                <div style={{ padding: 12, borderRadius: 10, border: "2px dashed #93c5fd", background: "#fff", color: "#2563eb", fontSize: 13, fontWeight: 700, textAlign: "center", cursor: "pointer" }}>
-                  📷 Cámara
-                </div>
-              </div>
-              <div style={{ flex: 1, position: "relative" }}>
-                <input type="file" accept="image/*" onChange={e => handleImg(e.target.files?.[0])} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }} />
-                <div style={{ padding: 12, borderRadius: 10, border: "2px dashed #a78bfa", background: "#fff", color: "#7c3aed", fontSize: 13, fontWeight: 700, textAlign: "center", cursor: "pointer" }}>
-                  🖼 Galería
-                </div>
-              </div>
-            </div>
-            {imgL && <div style={{ marginTop: 10, padding: 10, background: "#eff6ff", borderRadius: 8, fontSize: 12, color: "#2563eb", textAlign: "center" }}>⏳ Procesando imagen...</div>}
-            {imgRes && !imgRes.error && <div style={{ marginTop: 10, padding: 10, background: "#f0fdf4", borderRadius: 8, fontSize: 12, color: "#065f46" }}>✓ {imgRes.total_picar?.toLocaleString()} picar · {imgRes.total_rfid?.toLocaleString()} RFID</div>}
-            {imgRes?.error && <div style={{ marginTop: 10, padding: 10, background: "#fef2f2", borderRadius: 8, fontSize: 12, color: "#991b1b" }}>{imgRes.error}</div>}
-          </Card>
-
           <Card>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <Lbl>Foto actual — {hAct}</Lbl>
