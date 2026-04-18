@@ -84,26 +84,43 @@ function Card({ children, sx }) { return <div style={{ background: "#fff", borde
 function Lbl({ children }) { return <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 10 }}>{children}</div>; }
 function toM(t) { const p = t.split(":").map(Number); return p[0] * 60 + (p[1] || 0); }
 
+/* ═══ LOCALSTORAGE HELPERS ═══ */
+function loadLS(key, fallback) {
+  try { const v = localStorage.getItem("exp_" + key); return v !== null ? JSON.parse(v) : fallback; }
+  catch { return fallback; }
+}
+function usePersist(key, fallback) {
+  const [val, setVal] = useState(() => loadLS(key, fallback));
+  const set = useCallback((v) => {
+    setVal(prev => {
+      const next = typeof v === "function" ? v(prev) : v;
+      try { localStorage.setItem("exp_" + key, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [key]);
+  return [val, set];
+}
+
 /* ═══ APP ═══ */
 function App() {
-  const [zones, setZones] = useState(INIT_ZONES);
-  const [roles, setRoles] = useState(INIT_ROLES);
-  const [staff, setStaff] = useState({});
-  const [objAGV, setObjAGV] = useState(172);
-  const [objManual, setObjManual] = useState(80);
-  const [ratioR, setRatioR] = useState(6);
-  const [capCl, setCapCl] = useState(300);
-  const [finT, setFinT] = useState("14:00");
-  const [drops, setDrops] = useState([
+  const [zones, setZones] = usePersist("zones", INIT_ZONES);
+  const [roles, setRoles] = usePersist("roles", INIT_ROLES);
+  const [staff, setStaff] = usePersist("staff", {});
+  const [objAGV, setObjAGV] = usePersist("objAGV", 172);
+  const [objManual, setObjManual] = usePersist("objManual", 80);
+  const [ratioR, setRatioR] = usePersist("ratioR", 6);
+  const [capCl, setCapCl] = usePersist("capCl", 300);
+  const [finT, setFinT] = usePersist("finT", "14:00");
+  const [drops, setDrops] = usePersist("drops", [
     { id: 1, time: "10:30", note: "" }, { id: 2, time: "11:30", note: "Solo jueves" },
     { id: 3, time: "12:30", note: "" }, { id: 4, time: "13:30", note: "" },
   ]);
-  const [pP, setPP] = useState(0);
-  const [pC, setPC] = useState(0);
-  const [pR, setPR] = useState(0);
-  const [tG, setTG] = useState(0);
+  const [pP, setPP] = usePersist("pP", 0);
+  const [pC, setPC] = usePersist("pC", 0);
+  const [pR, setPR] = usePersist("pR", 0);
+  const [tG, setTG] = usePersist("tG", 0);
   const [tab, setTab] = useState("dashboard");
-  const [snaps, setSnaps] = useState([]);
+  const [snaps, setSnaps] = usePersist("snaps", []);
   const [showSn, setShowSn] = useState(false);
   const [snP, setSnP] = useState(0); const [snC, setSnC] = useState(0); const [snR, setSnR] = useState(0);
   const [showCfg, setShowCfg] = useState(false);
@@ -201,6 +218,13 @@ function App() {
   };
   const delSn = (id) => setSnaps(p => p.filter(s => s.id !== id));
 
+  const resetTurno = () => {
+    if (!window.confirm("¿Nuevo turno? Se borrarán todos los datos operativos.\nLa configuración (productividad, ratios, roles) se mantiene.")) return;
+    setPP(0); setPC(0); setPR(0); setTG(0);
+    setStaff({}); setSnaps([]);
+    setImgRes(null);
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: "#f3f4f6", fontFamily: "'DM Sans',sans-serif", color: "#111827", maxWidth: 480, margin: "0 auto" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet" />
@@ -215,7 +239,10 @@ function App() {
             {mRest > 0 && <span style={{ fontSize: 11, color: mRest > 60 ? "#059669" : "#dc2626", fontWeight: 700 }}>~{hRest.toFixed(1)}h</span>}
           </div>
         </div>
-        <button onClick={() => setShowCfg(!showCfg)} style={{ background: showCfg ? "#e5e7eb" : "#fff", border: "1px solid #d1d5db", color: "#6b7280", borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>⚙</button>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={resetTurno} style={{ background: "#fff", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🔄 Nuevo</button>
+          <button onClick={() => setShowCfg(!showCfg)} style={{ background: showCfg ? "#e5e7eb" : "#fff", border: "1px solid #d1d5db", color: "#6b7280", borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>⚙</button>
+        </div>
       </div>
 
       {/* CONFIG */}
