@@ -7,18 +7,21 @@ const INIT_ZONES = [
   { id: "clasificacion", name: "Clasificación", ci: 2 },
   { id: "admin", name: "Admin", ci: 3 },
   { id: "reasignacion", name: "Reasignación", ci: 4 },
+  { id: "housekeeping", name: "Housekeeping", ci: 5 },
+  { id: "tarea_extra_dept", name: "Tarea Extra", ci: 6 },
 ];
 const INIT_ROLES = [
   { id: "picker_agv", name: "Picker AGV", z: "picking", type: "directo", icon: "🤖" },
   { id: "picker_manual", name: "Picker Manual", z: "picking", type: "directo", icon: "📦" },
   { id: "runner_agv", name: "Runner AGV", z: "soporte", type: "indirecto", icon: "🏃" },
   { id: "runner_manual", name: "Runner Manual", z: "soporte", type: "indirecto", icon: "🏃‍♂️" },
+  { id: "runner_totales", name: "Runner de Totales", z: "soporte", type: "indirecto", icon: "📊" },
   { id: "clasif_paq", name: "Clasif. Paquetería", z: "clasificacion", type: "indirecto", icon: "📋" },
   { id: "clasif_colg", name: "Clasif. Colgado", z: "clasificacion", type: "indirecto", icon: "👔" },
+  { id: "rfid", name: "RFID", z: "clasificacion", type: "indirecto", icon: "📡" },
   { id: "clerk", name: "Clerk", z: "admin", type: "indirecto", icon: "🖥️" },
   { id: "facturacion", name: "Facturación", z: "admin", type: "indirecto", icon: "🧾" },
   { id: "pt_reasignacion", name: "PT Reasignación", z: "reasignacion", type: "tarea_extra", icon: "🔄" },
-  { id: "housekeeping", name: "Housekeeping", z: "reasignacion", type: "tarea_extra", icon: "🧹" },
 ];
 const PAL = [
   { bg: "#dbeafe", ac: "#2563eb", hd: "#1e40af" },
@@ -421,14 +424,12 @@ function App() {
           )}
 
           {salT > 0 && (
-            <Card sx={{ borderLeft: capH >= salT + pC ? "4px solid #059669" : "4px solid #dc2626" }}>
+            <Card>
               <Lbl>Impacto</Lbl>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div style={{ background: "#eff6ff", borderRadius: 10, padding: 10, textAlign: "center" }}><div style={{ fontSize: 9, color: "#6b7280", fontWeight: 700 }}>SALIDA</div><div style={{ fontSize: 22, fontWeight: 800, color: "#1e40af", fontFamily: "'JetBrains Mono',monospace" }}>{salT.toLocaleString()}</div><div style={{ fontSize: 9, color: "#6b7280" }}>uds/h</div></div>
-                <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 10, textAlign: "center" }}><div style={{ fontSize: 9, color: "#6b7280", fontWeight: 700 }}>CAP. CLASIF.</div><div style={{ fontSize: 22, fontWeight: 800, color: capH >= salT + pC ? "#065f46" : "#dc2626", fontFamily: "'JetBrains Mono',monospace" }}>{capH.toLocaleString()}</div><div style={{ fontSize: 9, color: "#6b7280" }}>uds/h</div></div>
+                <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 10, textAlign: "center" }}><div style={{ fontSize: 9, color: "#6b7280", fontWeight: 700 }}>CAP. CLASIF.</div><div style={{ fontSize: 22, fontWeight: 800, color: "#065f46", fontFamily: "'JetBrains Mono',monospace" }}>{capH.toLocaleString()}</div><div style={{ fontSize: 9, color: "#6b7280" }}>uds/h</div></div>
               </div>
-              {pAGV > 0 && rAGV < rNeed && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "#fef2f2", color: "#991b1b", marginBottom: 4 }}>🏃 Runners: {rAGV}/{rNeed}</div>}
-              {capH < salT + pC ? <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "#fef2f2", color: "#991b1b" }}>⚠ Cuello de botella clasificación</div> : clTot > 0 && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "#f0fdf4", color: "#065f46" }}>✓ Clasificación absorbe</div>}
             </Card>
           )}
 
