@@ -185,6 +185,10 @@ function App() {
     if (!hlHora) return;
     const tphHour = (tDir + tInd) > 0 ? (hlPicadas / (tDir + tInd)).toFixed(1) : "0";
     setHourLogs(p => [...p, { id: Date.now(), hora: hlHora, picadas: hlPicadas, clasificadas: hlClasif, personal: asig, dir: tDir, ind: tInd, tph: tphHour, expectedPic: expectedPicadaH, expectedClas: expectedClasifH }]);
+    // Restar picadas de pendiente picar
+    setPP(prev => Math.max(0, prev - hlPicadas));
+    // Pendiente clasificar: restar lo clasificado, sumar lo picado (que pasa a cola)
+    setPC(prev => Math.max(0, prev - hlClasif + hlPicadas));
     setHlHora(""); setHlPicadas(0); setHlClasif(0); setShowHourLog(false);
   };
 
