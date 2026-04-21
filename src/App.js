@@ -193,8 +193,9 @@ function App() {
   };
 
   const addDropLog = () => {
-    setDropLogs(p => [...p, { id: Date.now(), hora: hAct, picar: dlPicar, clasif: dlClasif, rfid: dlRFID }]);
-    setPP(dlPicar); setPC(dlClasif); setPR(dlRFID);
+    setDropLogs(p => [...p, { id: Date.now(), hora: hAct, picar: dlPicar, clasif: pC, rfid: dlRFID }]);
+    setPP(dlPicar); setPR(dlRFID);
+    // pC no se toca — se mantiene el acumulado actual
     setDlPicar(0); setDlClasif(0); setDlRFID(0); setShowDropLog(false);
   };
 
@@ -560,11 +561,13 @@ function App() {
           {/* Drop log form */}
           {showDropLog && (
             <Card sx={{ borderColor: "#fcd34d" }}>
-              <Lbl>Actualización de pendientes — {hAct}</Lbl>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
-                <div><label style={{ fontSize: 10, color: "#dc2626", display: "block", marginBottom: 4 }}>Pend. picar</label><NumField value={dlPicar} onCommit={setDlPicar} /></div>
-                <div><label style={{ fontSize: 10, color: "#d97706", display: "block", marginBottom: 4 }}>Pend. clasif.</label><NumField value={dlClasif} onCommit={setDlClasif} /></div>
-                <div><label style={{ fontSize: 10, color: "#7c3aed", display: "block", marginBottom: 4 }}>Pend. RFID</label><NumField value={dlRFID} onCommit={setDlRFID} /></div>
+              <Lbl>Actualización de caída — {hAct}</Lbl>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: "#dc2626", display: "block", marginBottom: 4 }}>Pend. picar (nuevo acumulado)</label><NumField value={dlPicar} onCommit={setDlPicar} /></div>
+                <div><label style={{ fontSize: 10, color: "#7c3aed", display: "block", marginBottom: 4 }}>Pend. RFID (nuevo acumulado)</label><NumField value={dlRFID} onCommit={setDlRFID} /></div>
+              </div>
+              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10, background: "#f9fafb", padding: 8, borderRadius: 8 }}>
+                Pend. clasificar se mantiene automáticamente: <b style={{ color: "#d97706" }}>{pC.toLocaleString()}</b>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={addDropLog} style={{ flex: 1, padding: 12, borderRadius: 8, border: "none", background: "#d97706", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Guardar</button>
