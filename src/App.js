@@ -1,28 +1,38 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 
-/* ═══ STRUCTURE ═══ */
-const INIT_ZONES = [
-  { id: "picking", name: "Picking", ci: 0 },
-  { id: "soporte", name: "Soporte", ci: 1 },
+/* ═══ LOCALSTORAGE ═══ */
+function loadLS(key, fb) { try { const v = localStorage.getItem("exp_" + key); return v !== null ? JSON.parse(v) : fb; } catch { return fb; } }
+function usePersist(key, fb) {
+  const [val, setVal] = useState(() => loadLS(key, fb));
+  const set = useCallback((v) => { setVal(prev => { const next = typeof v === "function" ? v(prev) : v; try { localStorage.setItem("exp_" + key, JSON.stringify(next)); } catch {} return next; }); }, [key]);
+  return [val, set];
+}
+
+/* ═══ DEFAULT STRUCTURE ═══ */
+const DEF_ZONES = [
   { id: "clasificacion", name: "Clasificación", ci: 2 },
-  { id: "admin", name: "Admin", ci: 3 },
-  { id: "reasignacion", name: "Reasignación", ci: 4 },
-  { id: "housekeeping", name: "Housekeeping", ci: 5 },
-  { id: "tarea_extra_dept", name: "Tarea Extra", ci: 6 },
+  { id: "facturacion", name: "Facturación", ci: 3 },
+  { id: "runner", name: "Runner", ci: 1 },
+  { id: "pesaje", name: "Pesaje de Bultos", ci: 5 },
+  { id: "picking_agv", name: "Picking AGV", ci: 0 },
+  { id: "clerks", name: "Clerks", ci: 6 },
+  { id: "rfid", name: "RFID", ci: 4 },
+  { id: "picking_manual", name: "Picking Manual", ci: 7 },
 ];
-const INIT_ROLES = [
-  { id: "picker_agv", name: "Picker AGV", z: "picking", type: "directo", icon: "🤖" },
-  { id: "picker_manual", name: "Picker Manual", z: "picking", type: "directo", icon: "📦" },
-  { id: "runner_agv", name: "Runner AGV", z: "soporte", type: "indirecto", icon: "🏃" },
-  { id: "runner_manual", name: "Runner Manual", z: "soporte", type: "indirecto", icon: "🏃‍♂️" },
-  { id: "runner_totales", name: "Runner de Totales", z: "soporte", type: "indirecto", icon: "📊" },
-  { id: "clasif_paq", name: "Clasif. Paquetería", z: "clasificacion", type: "indirecto", icon: "📋" },
-  { id: "clasif_colg", name: "Clasif. Colgado", z: "clasificacion", type: "indirecto", icon: "👔" },
-  { id: "rfid", name: "RFID", z: "clasificacion", type: "indirecto", icon: "📡" },
-  { id: "clerk", name: "Clerk", z: "admin", type: "indirecto", icon: "🖥️" },
-  { id: "facturacion", name: "Facturación", z: "admin", type: "indirecto", icon: "🧾" },
-  { id: "pt_reasignacion", name: "PT Reasignación", z: "reasignacion", type: "tarea_extra", icon: "🔄" },
+const DEF_ROLES = [
+  { id: "clasif_doblado", name: "Doblado", z: "clasificacion", type: "tarea_extra", icon: "👔" },
+  { id: "clasif_perchado", name: "Perchado", z: "clasificacion", type: "tarea_extra", icon: "👗" },
+  { id: "facturacion_op", name: "Facturación", z: "facturacion", type: "indirecto", icon: "🧾" },
+  { id: "runner_agv", name: "AGV", z: "runner", type: "indirecto", icon: "🏃" },
+  { id: "runner_manual", name: "Manual", z: "runner", type: "indirecto", icon: "🏃‍♂️" },
+  { id: "runner_totales", name: "Totales", z: "runner", type: "indirecto", icon: "📊" },
+  { id: "pesaje_op", name: "Pesaje", z: "pesaje", type: "indirecto", icon: "⚖️" },
+  { id: "picker_agv", name: "Picker AGV", z: "picking_agv", type: "directo", icon: "🤖" },
+  { id: "clerk_op", name: "Clerk", z: "clerks", type: "indirecto", icon: "🖥️" },
+  { id: "rfid_op", name: "RFID", z: "rfid", type: "indirecto", icon: "📡" },
+  { id: "picker_manual", name: "Picker Manual", z: "picking_manual", type: "directo", icon: "📦" },
 ];
+
 const PAL = [
   { bg: "#dbeafe", ac: "#2563eb", hd: "#1e40af" },
   { bg: "#ede9fe", ac: "#7c3aed", hd: "#5b21b6" },
@@ -41,77 +51,44 @@ const bi = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px 
 function NumField({ value, onCommit, placeholder, style }) {
   const ref = useRef(null);
   const [loc, setLoc] = useState(value ? String(value) : "");
-  const lastVal = useRef(value);
-  useEffect(() => {
-    if (lastVal.current !== value && document.activeElement !== ref.current) {
-      setLoc(value ? String(value) : "");
-    }
-    lastVal.current = value;
-  }, [value]);
+  const lv = useRef(value);
+  useEffect(() => { if (lv.current !== value && document.activeElement !== ref.current) { setLoc(value ? String(value) : ""); } lv.current = value; }, [value]);
   return <input ref={ref} type="text" inputMode="numeric" pattern="[0-9]*" value={loc} placeholder={placeholder || "0"} style={style || bi}
     onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ""); setLoc(v); onCommit(parseInt(v) || 0); }}
-    onBlur={() => { setLoc(value ? String(value) : ""); lastVal.current = value; }} />;
+    onBlur={() => { setLoc(value ? String(value) : ""); lv.current = value; }} />;
 }
 
 function TextField({ value, onChange, placeholder, style }) {
   return <input type="text" value={value} placeholder={placeholder} style={style || bi} onChange={e => onChange(e.target.value)} />;
 }
 
-// Counter with editable number - tap the number to type directly
 function EditableCounter({ count, onChange, warn }) {
-  const [editing, setEditing] = useState(false);
+  const [ed, setEd] = useState(false);
   const [loc, setLoc] = useState(String(count));
   const ref = useRef(null);
-
-  useEffect(() => { if (!editing) setLoc(String(count)); }, [count, editing]);
-  useEffect(() => { if (editing && ref.current) { ref.current.focus(); ref.current.select(); } }, [editing]);
-
-  if (editing) {
-    return (
-      <input ref={ref} type="text" inputMode="numeric" pattern="[0-9]*" value={loc}
-        style={{ width: 60, height: 36, textAlign: "center", fontSize: 16, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", border: "2px solid #2563eb", borderRadius: 10, background: "#eff6ff", color: "#111827", boxSizing: "border-box", outline: "none" }}
-        onChange={e => { const v = e.target.value.replace(/[^0-9]/g, ""); setLoc(v); }}
-        onBlur={() => { onChange(parseInt(loc) || 0); setEditing(false); }}
-        onKeyDown={e => { if (e.key === "Enter") { onChange(parseInt(loc) || 0); setEditing(false); } }}
-      />
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", background: warn ? "#fef2f2" : "#f3f4f6", borderRadius: 10, border: `1px solid ${warn ? "#fca5a5" : "#e5e7eb"}` }}>
-      <button onClick={() => onChange(Math.max(0, count - 1))} style={{ width: 34, height: 36, border: "none", background: "transparent", fontSize: 18, cursor: "pointer", color: "#6b7280", fontWeight: 700 }}>−</button>
-      <span onClick={() => setEditing(true)} style={{ minWidth: 30, textAlign: "center", fontSize: 16, fontWeight: 800, color: warn ? "#dc2626" : "#111827", fontFamily: "'JetBrains Mono',monospace", cursor: "pointer", padding: "0 2px" }}>{count}</span>
-      <button onClick={() => onChange(count + 1)} style={{ width: 34, height: 36, border: "none", background: "transparent", fontSize: 18, cursor: "pointer", color: "#6b7280", fontWeight: 700 }}>+</button>
-    </div>
-  );
+  useEffect(() => { if (!ed) setLoc(String(count)); }, [count, ed]);
+  useEffect(() => { if (ed && ref.current) { ref.current.focus(); ref.current.select(); } }, [ed]);
+  if (ed) return <input ref={ref} type="text" inputMode="numeric" pattern="[0-9]*" value={loc}
+    style={{ width: 56, height: 34, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", border: "2px solid #2563eb", borderRadius: 10, background: "#eff6ff", color: "#111827", boxSizing: "border-box", outline: "none" }}
+    onChange={e => setLoc(e.target.value.replace(/[^0-9]/g, ""))}
+    onBlur={() => { onChange(parseInt(loc) || 0); setEd(false); }}
+    onKeyDown={e => { if (e.key === "Enter") { onChange(parseInt(loc) || 0); setEd(false); } }} />;
+  return (<div style={{ display: "flex", alignItems: "center", background: warn ? "#fef2f2" : "#f3f4f6", borderRadius: 10, border: `1px solid ${warn ? "#fca5a5" : "#e5e7eb"}` }}>
+    <button onClick={() => onChange(Math.max(0, count - 1))} style={{ width: 34, height: 34, border: "none", background: "transparent", fontSize: 18, cursor: "pointer", color: "#6b7280", fontWeight: 700 }}>−</button>
+    <span onClick={() => setEd(true)} style={{ minWidth: 28, textAlign: "center", fontSize: 15, fontWeight: 800, color: warn ? "#dc2626" : "#111827", fontFamily: "'JetBrains Mono',monospace", cursor: "pointer" }}>{count}</span>
+    <button onClick={() => onChange(count + 1)} style={{ width: 34, height: 34, border: "none", background: "transparent", fontSize: 18, cursor: "pointer", color: "#6b7280", fontWeight: 700 }}>+</button>
+  </div>);
 }
 
 function Card({ children, sx }) { return <div style={{ background: "#fff", borderRadius: 14, padding: 16, marginBottom: 14, border: "1px solid #e5e7eb", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", ...sx }}>{children}</div>; }
 function Lbl({ children }) { return <div style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 10 }}>{children}</div>; }
 function toM(t) { const p = t.split(":").map(Number); return p[0] * 60 + (p[1] || 0); }
 
-/* ═══ LOCALSTORAGE HELPERS ═══ */
-function loadLS(key, fallback) {
-  try { const v = localStorage.getItem("exp_" + key); return v !== null ? JSON.parse(v) : fallback; }
-  catch { return fallback; }
-}
-function usePersist(key, fallback) {
-  const [val, setVal] = useState(() => loadLS(key, fallback));
-  const set = useCallback((v) => {
-    setVal(prev => {
-      const next = typeof v === "function" ? v(prev) : v;
-      try { localStorage.setItem("exp_" + key, JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, [key]);
-  return [val, set];
-}
-
 /* ═══ APP ═══ */
 function App() {
-  const [zones, setZones] = usePersist("zones", INIT_ZONES);
-  const [roles, setRoles] = usePersist("roles", INIT_ROLES);
-  const [staff, setStaff] = usePersist("staff", {});
+  const [zones, setZones] = usePersist("zones2", DEF_ZONES);
+  const [roles, setRoles] = usePersist("roles2", DEF_ROLES);
+  const [staff, setStaff] = usePersist("staff2", {});
   const [objAGV, setObjAGV] = usePersist("objAGV", 172);
   const [objManual, setObjManual] = usePersist("objManual", 80);
   const [ratioR, setRatioR] = usePersist("ratioR", 6);
@@ -121,20 +98,31 @@ function App() {
     { id: 1, time: "10:30", note: "" }, { id: 2, time: "11:30", note: "Solo jueves" },
     { id: 3, time: "12:30", note: "" }, { id: 4, time: "13:30", note: "" },
   ]);
-  const [pP, setPP] = usePersist("pP", 0);
-  const [pC, setPC] = usePersist("pC", 0);
-  const [pR, setPR] = usePersist("pR", 0);
-  const [tG, setTG] = usePersist("tG", 0);
+  const [pP, setPP] = usePersist("pP2", 0);
+  const [pC, setPC] = usePersist("pC2", 0);
+  const [pR, setPR] = usePersist("pR2", 0);
+  const [tG, setTG] = usePersist("tG2", 0);
+  const [hourLogs, setHourLogs] = usePersist("hourLogs", []);
+  const [dropLogs, setDropLogs] = usePersist("dropLogs", []);
   const [tab, setTab] = useState("dashboard");
-  const [snaps, setSnaps] = usePersist("snaps", []);
-  const [showSn, setShowSn] = useState(false);
-  const [snP, setSnP] = useState(0); const [snC, setSnC] = useState(0); const [snR, setSnR] = useState(0);
   const [showCfg, setShowCfg] = useState(false);
   const [now, setNow] = useState(new Date());
+
+  // Turno edit states
   const [eZone, setEZone] = useState(null); const [eZN, setEZN] = useState("");
   const [addZoneOpen, setAddZoneOpen] = useState(false); const [nZN, setNZN] = useState("");
   const [addRZ, setAddRZ] = useState(null); const [nRN, setNRN] = useState(""); const [nRT, setNRT] = useState("indirecto");
   const [addDropOpen, setAddDropOpen] = useState(false); const [nDT, setNDT] = useState(""); const [nDN, setNDN] = useState("");
+
+  // Situacion states
+  const [showHourLog, setShowHourLog] = useState(false);
+  const [hlHora, setHlHora] = useState("");
+  const [hlPicadas, setHlPicadas] = useState(0);
+  const [hlClasif, setHlClasif] = useState(0);
+  const [showDropLog, setShowDropLog] = useState(false);
+  const [dlPicar, setDlPicar] = useState(0);
+  const [dlClasif, setDlClasif] = useState(0);
+  const [dlRFID, setDlRFID] = useState(0);
 
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
   const hAct = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -147,12 +135,7 @@ function App() {
   const sc = useCallback((id, v) => setStaff(p => ({ ...p, [id]: Math.max(0, v) })), []);
   const gcol = z => PAL[z.ci % PAL.length];
 
-  const pAGV = g("picker_agv"), pMan = g("picker_manual");
-  const rAGV = g("runner_agv"), rMan = g("runner_manual");
-  const clTot = g("clasif_paq") + g("clasif_colg");
-  const salA = pAGV * objAGV, salM = pMan * objManual, salT = salA + salM;
-  const capH = clTot * capCl;
-  const rNeed = pAGV > 0 ? Math.ceil(pAGV / ratioR) : 0;
+  // Totals
   const tDir = roles.filter(r => r.type === "directo").reduce((a, r) => a + g(r.id), 0);
   const tInd = roles.filter(r => r.type === "indirecto").reduce((a, r) => a + g(r.id), 0);
   const tExt = roles.filter(r => r.type === "tarea_extra").reduce((a, r) => a + g(r.id), 0);
@@ -160,29 +143,60 @@ function App() {
   const sinA = tG - asig;
   const tpi = tDir > 0 ? (tInd / tDir).toFixed(2) : "—";
 
+  // Output
+  const pAGV = g("picker_agv"), pMan = g("picker_manual");
+  const salA = pAGV * objAGV, salM = pMan * objManual, salT = salA + salM;
+  const clTot = roles.filter(r => r.z === "clasificacion").reduce((a, r) => a + g(r.id), 0);
+  const capH = clTot * capCl;
+  const rAGV = g("runner_agv");
+  const rNeed = pAGV > 0 ? Math.ceil(pAGV / ratioR) : 0;
+
+  // TPH from hour logs
+  const totalPicadasReal = hourLogs.reduce((a, l) => a + l.picadas, 0);
+  const totalClasifReal = hourLogs.reduce((a, l) => a + l.clasificadas, 0);
+  const totalHorasHombre = hourLogs.length * (tDir + tInd);
+  const tphAcum = totalHorasHombre > 0 ? (totalPicadasReal / totalHorasHombre).toFixed(1) : "—";
+
+  // Expected vs real
+  const expectedPicadaH = salT;
+  const expectedClasifH = capH;
+
+  // Projection
+  const picarAlFinal = hRest > 0 && salT > 0 ? Math.max(0, pP - salT * hRest) : pP;
+  const clasifAlFinal = hRest > 0 && capH > 0 ? Math.max(0, (pC + Math.min(pP, salT * hRest)) - capH * hRest) : pC;
+  const rfidAlFinal = hRest > 0 && salT > 0 ? Math.max(0, pR - salT * hRest) : pR;
+
+  // Drops
   const actDrops = [...drops].sort((a, b) => toM(a.time) - toM(b.time));
   const nextDr = actDrops.find(d => toM(d.time) > nowM);
   const mToDr = nextDr ? toM(nextDr.time) - nowM : null;
 
-  // End of shift projection
-  const picarAlFinal = hRest > 0 && salT > 0 ? Math.max(0, pP - salT * hRest) : pP;
-  const clasifAlFinal = hRest > 0 && capH > 0 ? Math.max(0, (pC + Math.min(pP, salT * hRest)) - capH * hRest) : pC;
-  // RFID: assume same rate as picking (rough estimate)
-  const rfidAlFinal = hRest > 0 && salT > 0 ? Math.max(0, pR - salT * hRest) : pR;
-
-  const addSn = () => {
-    const picar = snP || pP, clasif = snC || pC, rfid = snR || pR;
-    setSnaps(p => [...p, { hora: hAct, picar, clasif, rfid, personal: asig, salida: salT, id: Date.now() }]);
-    setPP(picar); setPC(clasif); setPR(rfid);
-    setSnP(0); setSnC(0); setSnR(0); setShowSn(false);
+  // Zone reorder
+  const moveZone = (idx, dir) => {
+    setZones(p => {
+      const n = [...p]; const ni = idx + dir;
+      if (ni < 0 || ni >= n.length) return p;
+      [n[idx], n[ni]] = [n[ni], n[idx]]; return n;
+    });
   };
-  const delSn = (id) => setSnaps(p => p.filter(s => s.id !== id));
+
+  // Handlers
+  const addHourLog = () => {
+    if (!hlHora) return;
+    const tphHour = (tDir + tInd) > 0 ? (hlPicadas / (tDir + tInd)).toFixed(1) : "0";
+    setHourLogs(p => [...p, { id: Date.now(), hora: hlHora, picadas: hlPicadas, clasificadas: hlClasif, personal: asig, dir: tDir, ind: tInd, tph: tphHour, expectedPic: expectedPicadaH, expectedClas: expectedClasifH }]);
+    setHlHora(""); setHlPicadas(0); setHlClasif(0); setShowHourLog(false);
+  };
+
+  const addDropLog = () => {
+    setDropLogs(p => [...p, { id: Date.now(), hora: hAct, picar: dlPicar, clasif: dlClasif, rfid: dlRFID }]);
+    setPP(dlPicar); setPC(dlClasif); setPR(dlRFID);
+    setDlPicar(0); setDlClasif(0); setDlRFID(0); setShowDropLog(false);
+  };
 
   const resetTurno = () => {
-    if (!window.confirm("¿Nuevo turno? Se borrarán todos los datos operativos.\nLa configuración (productividad, ratios, roles) se mantiene.")) return;
-    setPP(0); setPC(0); setPR(0); setTG(0);
-    setStaff({}); setSnaps([]);
-    
+    if (!window.confirm("¿Nuevo turno? Se borran datos operativos.\nLa configuración se mantiene.")) return;
+    setPP(0); setPC(0); setPR(0); setTG(0); setStaff({}); setHourLogs([]); setDropLogs([]);
   };
 
   return (
@@ -200,7 +214,7 @@ function App() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={resetTurno} style={{ background: "#fff", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🔄 Nuevo</button>
+          <button onClick={resetTurno} style={{ background: "#fff", border: "1px solid #fca5a5", color: "#dc2626", borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🔄</button>
           <button onClick={() => setShowCfg(!showCfg)} style={{ background: showCfg ? "#e5e7eb" : "#fff", border: "1px solid #d1d5db", color: "#6b7280", borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>⚙</button>
         </div>
       </div>
@@ -208,7 +222,7 @@ function App() {
       {/* CONFIG */}
       {showCfg && (
         <div style={{ padding: "12px 20px 16px", background: "#fff", borderBottom: "1px solid #e5e7eb" }}>
-          <Lbl>Productividad (uds/h por picker)</Lbl>
+          <Lbl>Productividad (uds/h)</Lbl>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
             <div><label style={{ fontSize: 11, color: "#2563eb", marginBottom: 4, display: "block", fontWeight: 600 }}>AGV</label><NumField value={objAGV} onCommit={setObjAGV} /></div>
             <div><label style={{ fontSize: 11, color: "#059669", marginBottom: 4, display: "block", fontWeight: 600 }}>Manual</label><NumField value={objManual} onCommit={setObjManual} /></div>
@@ -220,7 +234,7 @@ function App() {
           </div>
           <Lbl>Referencia fin de turno</Lbl>
           <input type="time" value={finT} onChange={e => setFinT(e.target.value)} style={{ ...bi, marginBottom: 12 }} />
-          <Lbl>Horas de caída (referencia)</Lbl>
+          <Lbl>Horas de caída (ref.)</Lbl>
           {actDrops.map(d => (
             <div key={d.id} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
               <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", minWidth: 50 }}>{d.time}</span>
@@ -228,16 +242,13 @@ function App() {
               <button onClick={() => setDrops(p => p.filter(x => x.id !== d.id))} style={{ background: "none", border: "none", color: "#d1d5db", fontSize: 14, cursor: "pointer" }}>×</button>
             </div>
           ))}
-          {!addDropOpen ? (
-            <button onClick={() => setAddDropOpen(true)} style={{ background: "none", border: "none", color: "#2563eb", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ Añadir caída</button>
-          ) : (
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {!addDropOpen ? <button onClick={() => setAddDropOpen(true)} style={{ background: "none", border: "none", color: "#2563eb", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ Añadir caída</button>
+          : <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <input type="time" value={nDT} onChange={e => setNDT(e.target.value)} style={{ ...bi, fontSize: 12, padding: 6, width: 90 }} />
               <TextField value={nDN} onChange={setNDN} placeholder="Nota" style={{ ...bi, fontSize: 12, padding: 6, flex: 1 }} />
               <button onClick={() => { if (nDT) { setDrops(p => [...p, { id: Date.now(), time: nDT, note: nDN }]); setNDT(""); setNDN(""); setAddDropOpen(false); } }} style={{ border: "none", background: "#2563eb", color: "#fff", borderRadius: 6, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+</button>
               <button onClick={() => setAddDropOpen(false)} style={{ border: "none", background: "#e5e7eb", color: "#6b7280", borderRadius: 6, padding: "6px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
-            </div>
-          )}
+            </div>}
         </div>
       )}
 
@@ -287,7 +298,7 @@ function App() {
               </div>
               {tExt > 0 && (
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #e5e7eb" }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: TC.tarea_extra, marginBottom: 4 }}>TAREA EXTRA ({tExt})</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: TC.tarea_extra, marginBottom: 4 }}>TAREA EXTRA ({tExt}) — no cuenta para TPH</div>
                   {roles.filter(r => r.type === "tarea_extra").map(r => (
                     <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12 }}>
                       <span>{r.icon} {r.name}</span><span style={{ fontWeight: 800, color: TC.tarea_extra, fontFamily: "'JetBrains Mono',monospace" }}>{g(r.id)}</span>
@@ -296,7 +307,7 @@ function App() {
                 </div>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 8, borderTop: "2px solid #e5e7eb", fontSize: 12, fontWeight: 700 }}>
-                <span>TPI: <span style={{ color: tDir > 0 && tInd / tDir > 0.5 ? "#dc2626" : "#059669", fontFamily: "'JetBrains Mono',monospace" }}>{tpi}</span></span>
+                <span>TPI: <span style={{ fontFamily: "'JetBrains Mono',monospace", color: tDir > 0 && tInd / tDir > 0.5 ? "#dc2626" : "#059669" }}>{tpi}</span></span>
                 <span>{sinA === 0 && tG > 0 ? <span style={{ color: "#059669" }}>✓ Todos</span> : sinA > 0 ? <span style={{ color: "#92400e" }}>{sinA} sin asignar</span> : sinA < 0 ? <span style={{ color: "#dc2626" }}>{Math.abs(sinA)} de más</span> : null}</span>
               </div>
             </Card>
@@ -310,7 +321,7 @@ function App() {
                 <div style={{ background: "#eff6ff", borderRadius: 10, padding: 10, textAlign: "center" }}>
                   <div style={{ fontSize: 9, color: "#6b7280", fontWeight: 700 }}>SALIDA PICADA</div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: "#1e40af", fontFamily: "'JetBrains Mono',monospace" }}>{salT.toLocaleString()}</div>
-                  <div style={{ fontSize: 9, color: "#6b7280" }}>uds/h</div>
+                  <div style={{ fontSize: 9, color: "#6b7280" }}>uds/h esperadas</div>
                 </div>
                 <div style={{ background: capH >= salT + pC ? "#f0fdf4" : "#fef2f2", borderRadius: 10, padding: 10, textAlign: "center" }}>
                   <div style={{ fontSize: 9, color: "#6b7280", fontWeight: 700 }}>CAP. CLASIFICAR</div>
@@ -318,60 +329,52 @@ function App() {
                   <div style={{ fontSize: 9, color: "#6b7280" }}>uds/h</div>
                 </div>
               </div>
-              {pAGV > 0 && rAGV < rNeed && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "#fef2f2", color: "#991b1b", marginBottom: 4 }}>🏃 Runners: {rAGV}/{rNeed} — faltan {rNeed - rAGV}</div>}
-              {capH < salT + pC
-                ? <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "#fef2f2", color: "#991b1b" }}>⚠ Cuello de botella clasificación</div>
-                : clTot > 0 && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "#f0fdf4", color: "#065f46" }}>✓ Clasificación absorbe</div>
-              }
+              {pAGV > 0 && rAGV < rNeed && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "#fef2f2", color: "#991b1b", marginBottom: 4 }}>🏃 Runners: {rAGV}/{rNeed}</div>}
+              {capH < salT + pC ? <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "#fef2f2", color: "#991b1b" }}>⚠ Cuello de botella clasificación</div>
+                : clTot > 0 && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600, background: "#f0fdf4", color: "#065f46" }}>✓ Clasificación absorbe</div>}
             </Card>
           )}
 
           {/* TPH */}
-          {salT > 0 && (tDir + tInd) > 0 && (
+          {(tDir + tInd) > 0 && (
             <Card sx={{ borderLeft: "4px solid #0d9488" }}>
-              <Lbl>TPH — Tasa de Productividad por Hora</Lbl>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <div style={{ textAlign: "center", flex: 1 }}>
-                  <div style={{ fontSize: 32, fontWeight: 800, color: "#0d9488", fontFamily: "'JetBrains Mono',monospace" }}>{(salT / (tDir + tInd)).toFixed(1)}</div>
-                  <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700 }}>uds/persona·hora</div>
+              <Lbl>TPH</Lbl>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div style={{ background: "#ccfbf1", borderRadius: 10, padding: 10, textAlign: "center" }}>
+                  <div style={{ fontSize: 9, color: "#0d9488", fontWeight: 700 }}>ESPERADO</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: "#085041", fontFamily: "'JetBrains Mono',monospace", marginTop: 4 }}>{(salT / (tDir + tInd)).toFixed(1)}</div>
+                  <div style={{ fontSize: 9, color: "#6b7280" }}>{salT.toLocaleString()} / {tDir + tInd} pers</div>
                 </div>
-                <div style={{ fontSize: 11, color: "#6b7280", flex: 1 }}>
-                  <div style={{ padding: "3px 0" }}>{salT.toLocaleString()} uds procesadas/h</div>
-                  <div style={{ padding: "3px 0", borderTop: "1px solid #e5e7eb" }}>{tDir + tInd} horas hombre (dir+ind)</div>
+                <div style={{ background: hourLogs.length > 0 ? "#ccfbf1" : "#f3f4f6", borderRadius: 10, padding: 10, textAlign: "center" }}>
+                  <div style={{ fontSize: 9, color: hourLogs.length > 0 ? "#0d9488" : "#9ca3af", fontWeight: 700 }}>REAL (ACUMULADO)</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: hourLogs.length > 0 ? "#085041" : "#9ca3af", fontFamily: "'JetBrains Mono',monospace", marginTop: 4 }}>{tphAcum}</div>
+                  <div style={{ fontSize: 9, color: "#6b7280" }}>{hourLogs.length > 0 ? `${totalPicadasReal.toLocaleString()} uds / ${hourLogs.length}h` : "Sin registros"}</div>
                 </div>
               </div>
             </Card>
           )}
 
           {/* Next drop */}
-          {nextDr && (
-            <div style={{ background: "#fffbeb", borderRadius: 10, padding: "10px 14px", marginBottom: 14, border: "1px solid #fde68a", fontSize: 12 }}>
-              <span style={{ fontWeight: 700, color: "#92400e" }}>⏰ Próxima caída ref.: {nextDr.time}</span>
-              <span style={{ color: "#6b7280", marginLeft: 6 }}>({mToDr < 60 ? `${mToDr}min` : `${(mToDr / 60).toFixed(1)}h`})</span>
-              {nextDr.note && <span style={{ color: "#d97706", marginLeft: 6, fontSize: 10 }}>({nextDr.note})</span>}
-            </div>
-          )}
+          {nextDr && <div style={{ background: "#fffbeb", borderRadius: 10, padding: "10px 14px", marginBottom: 14, border: "1px solid #fde68a", fontSize: 12 }}>
+            <span style={{ fontWeight: 700, color: "#92400e" }}>⏰ Próxima caída ref.: {nextDr.time}</span>
+            <span style={{ color: "#6b7280", marginLeft: 6 }}>({mToDr < 60 ? `${mToDr}min` : `${(mToDr / 60).toFixed(1)}h`})</span>
+            {nextDr.note && <span style={{ color: "#d97706", marginLeft: 6, fontSize: 10 }}>({nextDr.note})</span>}
+          </div>}
 
-          {/* End of shift projection */}
+          {/* Projection */}
           {salT > 0 && (pP > 0 || pC > 0) && hRest > 0 && (
             <Card sx={{ borderLeft: "4px solid #1e40af" }}>
-              <Lbl>Proyección a las {finT} (~{hRest.toFixed(1)}h)</Lbl>
+              <Lbl>Proyección ~{finT} ({hRest.toFixed(1)}h)</Lbl>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-                <div style={{ background: picarAlFinal > 0 ? "#fef2f2" : "#f0fdf4", borderRadius: 10, padding: "10px 6px", textAlign: "center", border: `1px solid ${picarAlFinal > 0 ? "#fecaca" : "#bbf7d0"}` }}>
-                  <div style={{ fontSize: 9, color: "#9ca3af", fontWeight: 700 }}>POR PICAR</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: picarAlFinal > 0 ? "#dc2626" : "#059669", fontFamily: "'JetBrains Mono',monospace", marginTop: 4 }}>{Math.round(picarAlFinal).toLocaleString()}</div>
-                </div>
-                <div style={{ background: clasifAlFinal > 0 ? "#fffbeb" : "#f0fdf4", borderRadius: 10, padding: "10px 6px", textAlign: "center", border: `1px solid ${clasifAlFinal > 0 ? "#fde68a" : "#bbf7d0"}` }}>
-                  <div style={{ fontSize: 9, color: "#9ca3af", fontWeight: 700 }}>POR CLASIF.</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: clasifAlFinal > 0 ? "#d97706" : "#059669", fontFamily: "'JetBrains Mono',monospace", marginTop: 4 }}>{Math.round(clasifAlFinal).toLocaleString()}</div>
-                </div>
-                <div style={{ background: rfidAlFinal > 0 ? "#f5f3ff" : "#f0fdf4", borderRadius: 10, padding: "10px 6px", textAlign: "center", border: `1px solid ${rfidAlFinal > 0 ? "#ddd6fe" : "#bbf7d0"}` }}>
-                  <div style={{ fontSize: 9, color: "#9ca3af", fontWeight: 700 }}>PDT RFID</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, color: rfidAlFinal > 0 ? "#7c3aed" : "#059669", fontFamily: "'JetBrains Mono',monospace", marginTop: 4 }}>{Math.round(rfidAlFinal).toLocaleString()}</div>
-                </div>
-              </div>
-              <div style={{ textAlign: "center", fontSize: 11, color: "#6b7280", marginTop: 8 }}>
-                Basado en salida actual {salT.toLocaleString()}/h · cap. clasif. {capH.toLocaleString()}/h
+                {[{ l: "Por Picar", v: picarAlFinal, c0: "#dc2626", c1: "#059669", bg0: "#fef2f2", bg1: "#f0fdf4", b0: "#fecaca", b1: "#bbf7d0" },
+                  { l: "Por Clasif.", v: clasifAlFinal, c0: "#d97706", c1: "#059669", bg0: "#fffbeb", bg1: "#f0fdf4", b0: "#fde68a", b1: "#bbf7d0" },
+                  { l: "Pdt RFID", v: rfidAlFinal, c0: "#7c3aed", c1: "#059669", bg0: "#f5f3ff", bg1: "#f0fdf4", b0: "#ddd6fe", b1: "#bbf7d0" }
+                ].map(k => (
+                  <div key={k.l} style={{ background: k.v > 0 ? k.bg0 : k.bg1, borderRadius: 10, padding: "10px 6px", textAlign: "center", border: `1px solid ${k.v > 0 ? k.b0 : k.b1}` }}>
+                    <div style={{ fontSize: 9, color: "#9ca3af", fontWeight: 700 }}>{k.l}</div>
+                    <div style={{ fontSize: 18, fontWeight: 800, color: k.v > 0 ? k.c0 : k.c1, fontFamily: "'JetBrains Mono',monospace", marginTop: 4 }}>{Math.round(k.v).toLocaleString()}</div>
+                  </div>
+                ))}
               </div>
             </Card>
           )}
@@ -393,7 +396,7 @@ function App() {
             <Card sx={{ textAlign: "center", padding: "30px 20px" }}>
               <div style={{ fontSize: 32, marginBottom: 10 }}>👋</div>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Inicio de turno</div>
-              <div style={{ fontSize: 13, color: "#6b7280" }}>Ve a <b>Situación</b> para cargar datos o a <b>Turno</b> para asignar personal</div>
+              <div style={{ fontSize: 13, color: "#6b7280" }}>Ve a <b>Turno</b> para asignar personal</div>
             </Card>
           )}
         </>)}
@@ -433,14 +436,14 @@ function App() {
             </Card>
           )}
 
-          {zones.map(zone => {
+          {/* Zones with reorder */}
+          {zones.map((zone, zi) => {
             const zr = roles.filter(r => r.z === zone.id); const col = gcol(zone);
             const zt = zr.reduce((a, r) => a + g(r.id), 0);
-            const isBN = salT > 0 && capH < salT + pC && zone.id === "clasificacion";
             const isEd = eZone === zone.id;
             return (
-              <div key={zone.id} style={{ background: "#fff", borderRadius: 14, marginBottom: 10, border: isBN ? "2px solid #dc2626" : "1px solid #e5e7eb", overflow: "hidden" }}>
-                <div style={{ padding: "8px 12px", background: isBN ? "#fef2f2" : col.bg, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div key={zone.id} style={{ background: "#fff", borderRadius: 14, marginBottom: 10, border: "1px solid #e5e7eb", overflow: "hidden" }}>
+                <div style={{ padding: "8px 12px", background: col.bg, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   {isEd ? (
                     <div style={{ display: "flex", gap: 4, flex: 1, alignItems: "center" }}>
                       <TextField value={eZN} onChange={setEZN} placeholder="Nombre" style={{ ...bi, fontSize: 12, padding: "5px 8px", flex: 1 }} />
@@ -448,12 +451,16 @@ function App() {
                       <button onClick={() => setEZone(null)} style={{ border: "none", background: "#e5e7eb", color: "#6b7280", borderRadius: 6, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
                     </div>
                   ) : (<>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: isBN ? "#dc2626" : col.hd, textTransform: "uppercase", letterSpacing: 1 }}>{zone.name}{isBN && " ⚠"}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                        <button onClick={() => moveZone(zi, -1)} style={{ background: "none", border: "none", color: "#9ca3af", fontSize: 10, cursor: "pointer", padding: 0, lineHeight: 1 }}>▲</button>
+                        <button onClick={() => moveZone(zi, 1)} style={{ background: "none", border: "none", color: "#9ca3af", fontSize: 10, cursor: "pointer", padding: 0, lineHeight: 1 }}>▼</button>
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: col.hd, textTransform: "uppercase", letterSpacing: 1 }}>{zone.name}</span>
                       <button onClick={() => { setEZone(zone.id); setEZN(zone.name); }} style={{ background: "none", border: "none", color: "#9ca3af", fontSize: 11, cursor: "pointer" }}>✏️</button>
                       {zr.length === 0 && <button onClick={() => setZones(p => p.filter(z => z.id !== zone.id))} style={{ background: "none", border: "none", color: "#ef4444", fontSize: 11, cursor: "pointer" }}>🗑</button>}
                     </div>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: isBN ? "#dc2626" : col.hd, background: "#fff", padding: "2px 10px", borderRadius: 8, fontFamily: "'JetBrains Mono',monospace" }}>{zt}</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: col.hd, background: "#fff", padding: "2px 10px", borderRadius: 8, fontFamily: "'JetBrains Mono',monospace" }}>{zt}</span>
                   </>)}
                 </div>
                 <div style={{ padding: "4px 12px" }}>
@@ -502,10 +509,11 @@ function App() {
 
         {/* ═══ SITUACIÓN ═══ */}
         {tab === "situacion" && (<>
+          {/* Current status */}
           <Card>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <Lbl>Foto actual — {hAct}</Lbl>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#2563eb" }}>{asig} personas asignadas</span>
+              <Lbl>Estado actual — {hAct}</Lbl>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#2563eb" }}>{asig} personas</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
               {[{ l: "Por Picar", v: pP, c: "#dc2626" }, { l: "Por Clasif.", v: pC, c: "#d97706" }, { l: "Pdt RFID", v: pR, c: "#7c3aed" }].map(k => (
@@ -517,46 +525,117 @@ function App() {
             </div>
           </Card>
 
-          {snaps.length > 0 && (
-            <Card>
-              <Lbl>Evolución del turno</Lbl>
-              {snaps.map((s, i) => {
-                const prev = i > 0 ? snaps[i - 1] : null;
-                const dP = prev ? s.picar - prev.picar : 0, dC = prev ? s.clasif - prev.clasif : 0;
-                return (
-                  <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < snaps.length - 1 ? "1px solid #f3f4f6" : "none" }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700 }}>{s.hora}</span>
-                        <span style={{ fontSize: 10, color: "#9ca3af" }}>{s.personal} pers · {s.salida.toLocaleString()}/h</span>
-                      </div>
-                      <div style={{ display: "flex", gap: 8, fontSize: 11, fontFamily: "'JetBrains Mono',monospace", marginTop: 2, flexWrap: "wrap" }}>
-                        <span style={{ color: "#dc2626" }}>P:{s.picar.toLocaleString()}{prev && <span style={{ fontSize: 9, color: dP > 0 ? "#dc2626" : "#059669", marginLeft: 2 }}>{dP > 0 ? "+" : ""}{dP.toLocaleString()}</span>}</span>
-                        <span style={{ color: "#d97706" }}>C:{s.clasif.toLocaleString()}{prev && <span style={{ fontSize: 9, color: dC > 0 ? "#dc2626" : "#059669", marginLeft: 2 }}>{dC > 0 ? "+" : ""}{dC.toLocaleString()}</span>}</span>
-                        <span style={{ color: "#7c3aed" }}>R:{s.rfid.toLocaleString()}</span>
-                      </div>
-                    </div>
-                    <button onClick={() => delSn(s.id)} style={{ background: "none", border: "none", color: "#d1d5db", fontSize: 16, cursor: "pointer", padding: "4px 8px" }}>🗑</button>
-                  </div>
-                );
-              })}
+          {/* Two register buttons */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+            <button onClick={() => { setShowHourLog(true); setShowDropLog(false); }} style={{ padding: 14, borderRadius: 12, border: "none", background: "#2563eb", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>⏱ Registro hora</button>
+            <button onClick={() => { setShowDropLog(true); setShowHourLog(false); }} style={{ padding: 14, borderRadius: 12, border: "none", background: "#d97706", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>📦 Caída / Actualizar</button>
+          </div>
+
+          {/* Hour log form */}
+          {showHourLog && (
+            <Card sx={{ borderColor: "#93c5fd" }}>
+              <Lbl>Registro horario — ¿Qué se ha hecho esta hora?</Lbl>
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 11, color: "#6b7280", display: "block", marginBottom: 4 }}>Hora (ej: 10:00)</label>
+                <input type="time" value={hlHora} onChange={e => setHlHora(e.target.value)} style={bi} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: "#dc2626", display: "block", marginBottom: 4 }}>Uds picadas</label><NumField value={hlPicadas} onCommit={setHlPicadas} /></div>
+                <div><label style={{ fontSize: 10, color: "#d97706", display: "block", marginBottom: 4 }}>Uds clasificadas</label><NumField value={hlClasif} onCommit={setHlClasif} /></div>
+              </div>
+              <div style={{ fontSize: 11, color: "#6b7280", marginBottom: 10, background: "#f9fafb", padding: 8, borderRadius: 8 }}>
+                Esperado: <b style={{ color: "#2563eb" }}>{salT.toLocaleString()}</b> picadas · <b style={{ color: "#059669" }}>{capH.toLocaleString()}</b> clasificadas
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={addHourLog} style={{ flex: 1, padding: 12, borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Guardar</button>
+                <button onClick={() => setShowHourLog(false)} style={{ flex: 1, padding: 12, borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#6b7280", fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
+              </div>
             </Card>
           )}
 
-          {!showSn ? (
-            <button onClick={() => setShowSn(true)} style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: "#2563eb", color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>📸 Registrar situación manual</button>
-          ) : (
-            <Card sx={{ borderColor: "#d1d5db" }}>
-              <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>Hora: <b>{hAct}</b> (auto) · {asig} personas asignadas</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-                <div><label style={{ fontSize: 10, color: "#dc2626", display: "block", marginBottom: 4 }}>Picar</label><NumField value={snP} onCommit={setSnP} /></div>
-                <div><label style={{ fontSize: 10, color: "#d97706", display: "block", marginBottom: 4 }}>Clasif.</label><NumField value={snC} onCommit={setSnC} /></div>
-                <div><label style={{ fontSize: 10, color: "#7c3aed", display: "block", marginBottom: 4 }}>RFID</label><NumField value={snR} onCommit={setSnR} /></div>
+          {/* Drop log form */}
+          {showDropLog && (
+            <Card sx={{ borderColor: "#fcd34d" }}>
+              <Lbl>Actualización de pendientes — {hAct}</Lbl>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: "#dc2626", display: "block", marginBottom: 4 }}>Pend. picar</label><NumField value={dlPicar} onCommit={setDlPicar} /></div>
+                <div><label style={{ fontSize: 10, color: "#d97706", display: "block", marginBottom: 4 }}>Pend. clasif.</label><NumField value={dlClasif} onCommit={setDlClasif} /></div>
+                <div><label style={{ fontSize: 10, color: "#7c3aed", display: "block", marginBottom: 4 }}>Pend. RFID</label><NumField value={dlRFID} onCommit={setDlRFID} /></div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={addSn} style={{ flex: 1, padding: 12, borderRadius: 8, border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Registrar</button>
-                <button onClick={() => setShowSn(false)} style={{ flex: 1, padding: 12, borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#6b7280", fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
+                <button onClick={addDropLog} style={{ flex: 1, padding: 12, borderRadius: 8, border: "none", background: "#d97706", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Guardar</button>
+                <button onClick={() => setShowDropLog(false)} style={{ flex: 1, padding: 12, borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#6b7280", fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
               </div>
+            </Card>
+          )}
+
+          {/* Hour logs history */}
+          {hourLogs.length > 0 && (
+            <Card>
+              <Lbl>Registro por horas</Lbl>
+              {hourLogs.map((l, i) => {
+                const diffPic = l.picadas - l.expectedPic;
+                const diffClas = l.clasificadas - l.expectedClas;
+                return (
+                  <div key={l.id} style={{ padding: "10px 0", borderBottom: i < hourLogs.length - 1 ? "1px solid #f3f4f6" : "none" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <span style={{ fontSize: 14, fontWeight: 700 }}>{l.hora}</span>
+                        <span style={{ fontSize: 10, color: "#9ca3af", marginLeft: 6 }}>TPH: <b style={{ color: "#0d9488" }}>{l.tph}</b></span>
+                      </div>
+                      <button onClick={() => setHourLogs(p => p.filter(x => x.id !== l.id))} style={{ background: "none", border: "none", color: "#d1d5db", fontSize: 14, cursor: "pointer" }}>🗑</button>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 6 }}>
+                      <div style={{ fontSize: 11 }}>
+                        <span style={{ color: "#6b7280" }}>Picadas: </span>
+                        <span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "#dc2626" }}>{l.picadas.toLocaleString()}</span>
+                        <span style={{ fontSize: 9, color: diffPic >= 0 ? "#059669" : "#dc2626", marginLeft: 4 }}>({diffPic >= 0 ? "+" : ""}{diffPic.toLocaleString()} vs esp.)</span>
+                      </div>
+                      <div style={{ fontSize: 11 }}>
+                        <span style={{ color: "#6b7280" }}>Clasif: </span>
+                        <span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "#d97706" }}>{l.clasificadas.toLocaleString()}</span>
+                        <span style={{ fontSize: 9, color: diffClas >= 0 ? "#059669" : "#dc2626", marginLeft: 4 }}>({diffClas >= 0 ? "+" : ""}{diffClas.toLocaleString()} vs esp.)</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Accumulated */}
+              <div style={{ paddingTop: 10, borderTop: "2px solid #e5e7eb", marginTop: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700 }}>
+                  <span>Acumulado ({hourLogs.length}h)</span>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>TPH: <span style={{ color: "#0d9488" }}>{tphAcum}</span></span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 4 }}>
+                  <span style={{ color: "#dc2626" }}>Pic: {totalPicadasReal.toLocaleString()}</span>
+                  <span style={{ color: "#d97706" }}>Clas: {totalClasifReal.toLocaleString()}</span>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Drop logs history */}
+          {dropLogs.length > 0 && (
+            <Card>
+              <Lbl>Actualizaciones de pendientes</Lbl>
+              {dropLogs.map((d, i) => {
+                const prev = i > 0 ? dropLogs[i - 1] : null;
+                const dP = prev ? d.picar - prev.picar : 0;
+                const dC = prev ? d.clasif - prev.clasif : 0;
+                return (
+                  <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: i < dropLogs.length - 1 ? "1px solid #f3f4f6" : "none" }}>
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>{d.hora}</span>
+                      <div style={{ display: "flex", gap: 8, fontSize: 11, fontFamily: "'JetBrains Mono',monospace", marginTop: 2 }}>
+                        <span style={{ color: "#dc2626" }}>{d.picar.toLocaleString()}{prev && <span style={{ fontSize: 9, color: dP > 0 ? "#dc2626" : "#059669", marginLeft: 2 }}>{dP > 0 ? "+" : ""}{dP.toLocaleString()}</span>}</span>
+                        <span style={{ color: "#d97706" }}>{d.clasif.toLocaleString()}{prev && <span style={{ fontSize: 9, color: dC > 0 ? "#dc2626" : "#059669", marginLeft: 2 }}>{dC > 0 ? "+" : ""}{dC.toLocaleString()}</span>}</span>
+                        <span style={{ color: "#7c3aed" }}>{d.rfid.toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <button onClick={() => setDropLogs(p => p.filter(x => x.id !== d.id))} style={{ background: "none", border: "none", color: "#d1d5db", fontSize: 14, cursor: "pointer" }}>🗑</button>
+                  </div>
+                );
+              })}
             </Card>
           )}
         </>)}
