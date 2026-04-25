@@ -18,10 +18,11 @@ const DEF_ZONES = [
   { id: "clerks", name: "Clerks", ci: 5 },
   { id: "rfid", name: "RFID", ci: 6 },
   { id: "picking_manual", name: "Picking Manual", ci: 7 },
+  { id: "extra", name: "Extra", ci: 3 },
 ];
 const DEF_ROLES = [
-  { id: "clasif_doblado", name: "Doblado", z: "clasificacion", type: "tarea_extra", icon: "👔" },
-  { id: "clasif_perchado", name: "Perchado", z: "clasificacion", type: "tarea_extra", icon: "👗" },
+  { id: "clasif_doblado", name: "Doblado", z: "clasificacion", type: "indirecto", icon: "👔" },
+  { id: "clasif_perchado", name: "Perchado", z: "clasificacion", type: "indirecto", icon: "👗" },
   { id: "facturacion_op", name: "Facturación", z: "facturacion", type: "indirecto", icon: "🧾" },
   { id: "runner_agv", name: "AGV", z: "runner", type: "indirecto", icon: "🏃" },
   { id: "runner_manual", name: "Manual", z: "runner", type: "indirecto", icon: "🏃‍♂️" },
@@ -145,8 +146,9 @@ function App() {
   const totClaR = hourLogs.reduce((a, l) => a + l.clasificadas, 0);
   const totHH = hourLogs.length * (tDir + tInd);
   const tphAcum = totHH > 0 ? (totPicR / totHH).toFixed(1) : "—";
+  const tClasStaff = roles.filter(r => r.z === "clasificacion").reduce((a, r) => a + g(r.id), 0);
   const avgPicPerPerson = hourLogs.length > 0 && tDir > 0 ? Math.round(totPicR / (hourLogs.length * tDir)) : null;
-  const avgClaPerPerson = hourLogs.length > 0 && tInd > 0 ? Math.round(totClaR / (hourLogs.length * tInd)) : null;
+  const avgClaPerPerson = hourLogs.length > 0 && tClasStaff > 0 ? Math.round(totClaR / (hourLogs.length * tClasStaff)) : null;
 
   const expectedPH = salT;
   const expectedCH = capH;
@@ -161,7 +163,9 @@ function App() {
   const addHourLog = () => {
     if (!hlH) return;
     const tph = (tDir + tInd) > 0 ? (hlP / (tDir + tInd)).toFixed(1) : "0";
-    setHourLogs(p => [...p, { id: Date.now(), hora: hlH, picadas: hlP, clasificadas: hlC, personal: asig, dir: tDir, ind: tInd, tph, expectedPic: expectedPH, expectedClas: expectedCH }]);
+    const avgPic = tDir > 0 ? Math.round(hlP / tDir) : 0;
+    const avgCla = tClasStaff > 0 ? Math.round(hlC / tClasStaff) : 0;
+    setHourLogs(p => [...p, { id: Date.now(), hora: hlH, picadas: hlP, clasificadas: hlC, personal: asig, dir: tDir, ind: tInd, clasifStaff: tClasStaff, tph, avgPic, avgCla, expectedPic: expectedPH, expectedClas: expectedCH }]);
     setPP(prev => Math.max(0, prev - hlP));
     setPC(prev => Math.max(0, prev - hlC + hlP));
     setHlH(""); setHlP(0); setHlC(0); setShowHL(false);
@@ -335,7 +339,7 @@ function App() {
                     <div style={{ background: "rgba(245,158,11,0.08)", borderRadius: 10, padding: "8px 10px", border: "1px solid rgba(245,158,11,0.15)" }}>
                       <div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>CLASIF/CLASIF·H</div>
                       <div style={{ fontSize: 20, fontWeight: 800, color: "#f59e0b", fontFamily: S.mono, marginTop: 2 }}>{avgClaPerPerson !== null ? avgClaPerPerson : "—"}</div>
-                      <div style={{ fontSize: 9, color: S.dim }}>{totClaR.toLocaleString()} / {hourLogs.length * tInd} ind·h</div>
+                      <div style={{ fontSize: 9, color: S.dim }}>{totClaR.toLocaleString()} / {hourLogs.length * tClasStaff} clasif·h</div>
                     </div>
                   </div>
                   {/* Totals */}
@@ -574,6 +578,8 @@ function App() {
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 14, fontWeight: 700, color: S.text }}>{l.hora}</span>
                         <Pill color="#14b8a6">TPH {l.tph}</Pill>
+                        {l.avgPic !== undefined && <Pill color="#3b82f6">{l.avgPic}/pic</Pill>}
+                        {l.avgCla !== undefined && <Pill color="#f59e0b">{l.avgCla}/cla</Pill>}
                       </div>
                       <button onClick={() => setHourLogs(p => p.filter(x => x.id !== l.id))} style={{ background: "none", border: "none", color: S.dim, fontSize: 14, cursor: "pointer" }}>🗑</button>
                     </div>
