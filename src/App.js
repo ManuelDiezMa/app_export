@@ -97,6 +97,7 @@ function App() {
   const [ratioR, setRatioR] = usePersist("ratioR", 6);
   const [capCl, setCapCl] = usePersist("capCl", 300);
   const [finT, setFinT] = usePersist("finT", "14:00");
+  const [horasTurno, setHorasTurno] = usePersist("horasTurno", 7.5);
   const [drops, setDrops] = usePersist("drops", [
     { id: 1, time: "10:30", note: "" }, { id: 2, time: "11:30", note: "Solo jueves" },
     { id: 3, time: "12:30", note: "" }, { id: 4, time: "13:30", note: "" },
@@ -118,6 +119,78 @@ function App() {
   const [hlH, setHlH] = useState(""); const [hlP, setHlP] = useState(0); const [hlC, setHlC] = useState(0);
   const [showDL, setShowDL] = useState(false);
   const [dlP, setDlP] = useState(0); const [dlR, setDlR] = useState(0);
+  const [routes, setRoutes] = usePersist("routes", []);
+  const [showAddRoute, setShowAddRoute] = useState(false);
+  const [nRCut, setNRCut] = useState(""); const [nRDest, setNRDest] = useState(""); const [nRFme, setNRFme] = useState(""); const [nRCua, setNRCua] = useState(""); const [nRSal, setNRSal] = useState("");
+  const [routeImgLoading, setRouteImgLoading] = useState(false);
+  const [routeImgError, setRouteImgError] = useState(null);
+  const routeFileRef = useRef(null);
+
+  // Route image handler - compress + send to Claude
+  const handleRouteImg = async (file) => {
+    if (!file) return;
+    setRouteImgLoading(true); setRouteImgError(null);
+    try {
+      // Compress image to max 1200px wide
+      const b64 = await new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const maxW = 1200;
+          const scale = img.width > maxW ? maxW / img.width : 1;
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+          res(dataUrl.split(",")[1]);
+        };
+        img.onerror = () => rej(new Error("No se pudo leer la imagen"));
+        const reader = new FileReader();
+        reader.onload = (e) => { img.src = e.target.result; };
+        reader.readAsDataURL(file);
+      });
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } },
+              { type: "text", text: 'This is a warehouse shipping routes table. Extract ALL visible routes. For each route, get: CUT OFF time, Destino (destination name), FME time, CUADRE time, SALIDA CAMION time, and any comments. Ignore rows that are clearly crossed out or cancelled UNLESS they have a comment like "CANCELADO". Return ONLY a JSON array, nothing else:\n[{"cutoff":"HH:MM","dest":"Name","fme":"HH:MM","cuadre":"HH:MM","salida":"HH:MM","comment":""}]\nUse 24h format. If a field is unreadable use empty string. Include cancelled routes with comment "CANCELADO".' }
+            ]
+          }]
+        })
+      });
+      if (!response.ok) throw new Error(`API error ${response.status}`);
+      const data = await response.json();
+      const text = (data.content || []).map(i => i.text || "").join("");
+      const clean = text.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const newRoutes = parsed.map((r, i) => ({
+          id: Date.now() + i,
+          cutoff: r.cutoff || "",
+          dest: r.dest || "",
+          fme: r.fme || "",
+          cuadre: r.cuadre || "",
+          salida: r.salida || "",
+          status: (r.comment || "").toUpperCase().includes("CANCEL") ? "cancelled" : "pending",
+          comment: r.comment || "",
+        }));
+        setRoutes(newRoutes);
+      } else {
+        setRouteImgError("No se encontraron rutas en la imagen.");
+      }
+    } catch (err) {
+      setRouteImgError(`Error: ${err.message || "No se pudo leer"}. Añade las rutas manualmente.`);
+    }
+    setRouteImgLoading(false);
+  };
 
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
   const hAct = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -167,7 +240,7 @@ function App() {
     const avgCla = tClasStaff > 0 ? Math.round(hlC / tClasStaff) : 0;
     setHourLogs(p => [...p, { id: Date.now(), hora: hlH, picadas: hlP, clasificadas: hlC, personal: asig, dir: tDir, ind: tInd, clasifStaff: tClasStaff, tph, avgPic, avgCla, expectedPic: expectedPH, expectedClas: expectedCH }]);
     setPP(prev => Math.max(0, prev - hlP));
-    setPC(prev => Math.max(0, prev - hlC + hlP));
+    setPC(prev => Math.max(0, prev - hlC + Math.round(hlP * 0.7)));
     setHlH(""); setHlP(0); setHlC(0); setShowHL(false);
   };
   const addDropLog = () => {
@@ -178,6 +251,7 @@ function App() {
   const resetTurno = () => {
     if (!window.confirm("¿Nuevo turno? Se borran datos operativos.")) return;
     setPP(0); setPC(0); setPR(0); setTG(0); setStaff({}); setHourLogs([]); setDropLogs([]);
+    setRoutes(p => p.map(r => ({ ...r, status: "pending" })));
   };
 
   const gcol = (z) => ZC[z.ci % ZC.length];
@@ -216,7 +290,11 @@ function App() {
             <div><label style={{ fontSize: 10, color: S.dim, marginBottom: 4, display: "block" }}>Uds/h Clasificador</label><NF value={capCl} onCommit={v => setCapCl(v || 1)} /></div>
           </div>
           <Lbl>Fin de turno (ref.)</Lbl>
-          <input type="time" value={finT} onChange={e => setFinT(e.target.value)} style={{ ...inp, marginBottom: 12 }} />
+          <input type="time" value={finT} onChange={e => setFinT(e.target.value)} style={{ ...inp, marginBottom: 8 }} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginBottom: 12 }}>
+            <div><label style={{ fontSize: 10, color: S.dim, marginBottom: 4, display: "block" }}>Horas efectivas turno (sin descanso)</label><NF value={horasTurno * 10} onCommit={v => setHorasTurno(v / 10)} placeholder="75" style={{ ...inp }} /></div>
+          </div>
+          <div style={{ fontSize: 10, color: S.dim, marginBottom: 12 }}>Turno efectivo: <b style={{ color: S.text }}>{horasTurno}h</b> · Ratio clasif→picado: <b style={{ color: S.text }}>70%</b></div>
           <Lbl>Horas de caída</Lbl>
           {actDrops.map(d => (
             <div key={d.id} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
@@ -236,9 +314,9 @@ function App() {
       )}
 
       {/* TABS */}
-      <div style={{ display: "flex", padding: "0 16px", background: "rgba(15,23,42,0.6)", borderBottom: "1px solid rgba(71,85,105,0.2)" }}>
-        {[["dashboard", "Dashboard"], ["turno", "Turno"], ["situacion", "Situación"]].map(([id, l]) => (
-          <button key={id} onClick={() => setTab(id)} style={{ padding: "12px 12px", border: "none", background: "transparent", color: tab === id ? "#3b82f6" : S.dim, fontSize: 13, fontWeight: 700, cursor: "pointer", borderBottom: tab === id ? "2px solid #3b82f6" : "2px solid transparent", flex: 1, textAlign: "center" }}>{l}</button>
+      <div style={{ display: "flex", padding: "0 10px", background: "rgba(15,23,42,0.6)", borderBottom: "1px solid rgba(71,85,105,0.2)" }}>
+        {[["dashboard", "Dashboard"], ["turno", "Turno"], ["situacion", "Situación"], ["rutas", "Rutas PT"]].map(([id, l]) => (
+          <button key={id} onClick={() => setTab(id)} style={{ padding: "11px 6px", border: "none", background: "transparent", color: tab === id ? "#3b82f6" : S.dim, fontSize: 12, fontWeight: 700, cursor: "pointer", borderBottom: tab === id ? "2px solid #3b82f6" : "2px solid transparent", flex: 1, textAlign: "center" }}>{l}</button>
         ))}
       </div>
 
@@ -631,6 +709,112 @@ function App() {
                   </div>
                 );
               })}
+            </Card>
+          )}
+        </>)}
+
+        {/* ═══ RUTAS PT ═══ */}
+        {tab === "rutas" && (<>
+          {/* Photo upload */}
+          <Card>
+            <Lbl>Cargar rutas del día</Lbl>
+            <p style={{ fontSize: 11, color: S.dim, marginBottom: 10 }}>Haz una foto a la hoja de rutas o súbela desde galería.</p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 1, position: "relative" }}>
+                <input type="file" accept="image/*" capture="environment" onChange={e => handleRouteImg(e.target.files?.[0])} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }} />
+                <div style={{ padding: 12, borderRadius: 10, border: "2px dashed rgba(59,130,246,0.3)", background: "rgba(59,130,246,0.05)", color: "#3b82f6", fontSize: 13, fontWeight: 700, textAlign: "center", cursor: "pointer" }}>📷 Cámara</div>
+              </div>
+              <div style={{ flex: 1, position: "relative" }}>
+                <input type="file" accept="image/*" onChange={e => handleRouteImg(e.target.files?.[0])} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }} />
+                <div style={{ padding: 12, borderRadius: 10, border: "2px dashed rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.05)", color: "#a78bfa", fontSize: 13, fontWeight: 700, textAlign: "center", cursor: "pointer" }}>🖼 Galería</div>
+              </div>
+            </div>
+            {routeImgLoading && <div style={{ marginTop: 10, padding: 10, background: "rgba(59,130,246,0.1)", borderRadius: 8, fontSize: 12, color: "#93c5fd", textAlign: "center" }}>⏳ Leyendo rutas de la imagen...</div>}
+            {routeImgError && <div style={{ marginTop: 10, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8, fontSize: 12, color: "#fca5a5" }}>{routeImgError}</div>}
+          </Card>
+
+          {/* Routes list */}
+          {routes.length > 0 && (
+            <Card>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <Lbl>Rutas del día</Lbl>
+                <div style={{ fontSize: 11, color: S.dim }}>
+                  <span style={{ color: "#10b981", fontWeight: 700 }}>{routes.filter(r => r.status === "done").length}</span>
+                  <span> / {routes.filter(r => r.status !== "cancelled").length}</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 12, background: "rgba(51,65,85,0.3)" }}>
+                <div style={{ width: `${routes.filter(r => r.status !== "cancelled").length > 0 ? (routes.filter(r => r.status === "done").length / routes.filter(r => r.status !== "cancelled").length) * 100 : 0}%`, background: "#10b981", transition: "width 0.3s" }} />
+              </div>
+            </Card>
+          )}
+
+          {routes.map((r, i) => {
+            const isDone = r.status === "done";
+            const isCancelled = r.status === "cancelled";
+            const cutM = toM(r.cutoff.includes(":") ? r.cutoff.padStart(5, "0") : r.cutoff);
+            const isUrgent = !isDone && !isCancelled && cutM > 0 && cutM - nowM < 60 && cutM - nowM > 0;
+            const isPast = !isDone && !isCancelled && cutM <= nowM;
+            return (
+              <div key={r.id} style={{
+                background: isDone ? "rgba(16,185,129,0.08)" : isCancelled ? "rgba(51,65,85,0.2)" : isUrgent ? "rgba(239,68,68,0.08)" : S.card,
+                borderRadius: 12, marginBottom: 6, border: `1px solid ${isDone ? "rgba(16,185,129,0.2)" : isUrgent ? "rgba(239,68,68,0.3)" : S.cardBorder}`,
+                padding: "10px 12px", opacity: isCancelled ? 0.5 : 1,
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, fontFamily: S.mono, color: isUrgent ? "#ef4444" : isPast ? "#f59e0b" : S.text }}>{r.cutoff}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: isDone ? "#6ee7b7" : isCancelled ? S.dim : S.text, textDecoration: isCancelled ? "line-through" : isDone ? "line-through" : "none" }}>{r.dest}</span>
+                    {isUrgent && <span style={{ fontSize: 9, color: "#ef4444", fontWeight: 700 }}>URGENTE</span>}
+                  </div>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={() => setRoutes(p => p.map(x => x.id === r.id ? { ...x, status: x.status === "done" ? "pending" : "done" } : x))} style={{ background: isDone ? "rgba(16,185,129,0.2)" : "rgba(51,65,85,0.3)", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 11, cursor: "pointer", color: isDone ? "#6ee7b7" : S.dim, fontWeight: 700 }}>{isDone ? "✓" : "○"}</button>
+                    <button onClick={() => setRoutes(p => p.map(x => x.id === r.id ? { ...x, status: x.status === "cancelled" ? "pending" : "cancelled" } : x))} style={{ background: "rgba(51,65,85,0.3)", border: "none", borderRadius: 6, padding: "4px 6px", fontSize: 10, cursor: "pointer", color: S.dim }}>✕</button>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 12, fontSize: 10, color: S.dim }}>
+                  <span>FME <b style={{ color: S.sub }}>{r.fme}</b></span>
+                  <span>Cuadre <b style={{ color: S.sub }}>{r.cuadre}</b></span>
+                  <span>Salida <b style={{ color: S.sub }}>{r.salida}</b></span>
+                </div>
+                {r.comment && <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 4 }}>{r.comment}</div>}
+              </div>
+            );
+          })}
+
+          {!showAddRoute ? (
+            <button onClick={() => setShowAddRoute(true)} style={{ width: "100%", padding: 10, borderRadius: 10, border: `2px dashed ${S.cardBorder}`, background: "transparent", color: S.dim, fontSize: 12, fontWeight: 700, cursor: "pointer", marginTop: 6 }}>+ Añadir ruta</button>
+          ) : (
+            <Card sx={{ marginTop: 6 }}>
+              <Lbl>Nueva ruta</Lbl>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cut Off</label><input type="time" value={nRCut} onChange={e => setNRCut(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Destino</label><TF value={nRDest} onChange={setNRDest} placeholder="Destino" /></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>FME</label><input type="time" value={nRFme} onChange={e => setNRFme(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cuadre</label><input type="time" value={nRCua} onChange={e => setNRCua(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Salida</label><input type="time" value={nRSal} onChange={e => setNRSal(e.target.value)} style={inp} /></div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => { if (nRDest.trim() && nRCut) { setRoutes(p => [...p, { id: Date.now(), cutoff: nRCut, dest: nRDest.trim(), fme: nRFme, cuadre: nRCua, salida: nRSal, status: "pending", comment: "" }].sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0")))); setNRCut(""); setNRDest(""); setNRFme(""); setNRCua(""); setNRSal(""); setShowAddRoute(false); } }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Añadir</button>
+                <button onClick={() => setShowAddRoute(false)} style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
+              </div>
+            </Card>
+          )}
+
+          {routes.length > 0 && (
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={() => { if (window.confirm("¿Resetear todas las rutas a pendiente?")) setRoutes(p => p.map(r => ({ ...r, status: "pending" }))); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: "rgba(51,65,85,0.3)", color: S.dim, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🔄 Resetear</button>
+              <button onClick={() => { if (window.confirm("¿Borrar todas las rutas?")) setRoutes([]); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: "rgba(239,68,68,0.1)", color: "#fca5a5", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🗑 Borrar todas</button>
+            </div>
+          )}
+
+          {routes.length === 0 && !routeImgLoading && (
+            <Card sx={{ textAlign: "center", padding: "30px 20px" }}>
+              <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.6 }}>🚚</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: S.sub }}>Sin rutas cargadas</div>
+              <div style={{ fontSize: 12, color: S.dim, marginTop: 4 }}>Haz una foto a la hoja de rutas del día o añádelas manualmente</div>
             </Card>
           )}
         </>)}
