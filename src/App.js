@@ -168,6 +168,8 @@ function App() {
   const [routeImgError, setRouteImgError] = useState(null);
   const routeCamRef = useRef(null);
   const routeGalRef = useRef(null);
+  const [editRoute, setEditRoute] = useState(null);
+  const [erCut, setErCut] = useState(""); const [erDest, setErDest] = useState(""); const [erFme, setErFme] = useState(""); const [erCua, setErCua] = useState(""); const [erSal, setErSal] = useState(""); const [erCom, setErCom] = useState("");
 
   // Clock
   useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
@@ -278,6 +280,14 @@ function App() {
     if (!route) return;
     await sbPatch("routes", `id=eq.${routeId}`, { status: route.status === "cancelled" ? "pending" : "cancelled", checks: {} });
     loadAll();
+  };
+  const startEditRoute = (r) => {
+    setEditRoute(r.id); setErCut(r.cutoff || ""); setErDest(r.dest || ""); setErFme(r.fme || ""); setErCua(r.cuadre || ""); setErSal(r.salida || ""); setErCom(r.comment || "");
+  };
+  const saveEditRoute = async () => {
+    if (!editRoute) return;
+    await sbPatch("routes", `id=eq.${editRoute}`, { cutoff: erCut, dest: erDest, fme: erFme, cuadre: erCua, salida: erSal, comment: erCom });
+    setEditRoute(null); loadAll();
   };
   const addRoute = async () => {
     if (!nRDest.trim() || !nRCut) return;
@@ -646,7 +656,28 @@ function App() {
             const allDone = ck.cutoff && ck.fme && ck.cuadre && ck.salida;
             const cutM = toM((r.cutoff || "").padStart(5, "0"));
             const isUrg = !allDone && !isCan && cutM > 0 && cutM - nowM < 60 && cutM - nowM > 0;
+            const isEditing = editRoute === r.id;
             const cs = (f) => ({ padding: "6px 4px", textAlign: "center", fontSize: 11, fontFamily: S.mono, fontWeight: 700, cursor: "pointer", borderRadius: 6, background: ck[f] ? "rgba(16,185,129,0.2)" : "transparent", color: ck[f] ? "#6ee7b7" : isCan ? S.dim : S.sub, textDecoration: isCan ? "line-through" : "none" });
+
+            if (isEditing) return (
+              <div key={r.id} style={{ background: "rgba(59,130,246,0.08)", borderRadius: 10, marginBottom: 4, border: "1px solid rgba(59,130,246,0.3)", padding: "10px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+                  <div><div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>DESTINO</div><TF value={erDest} onChange={setErDest} style={{ ...inp, fontSize: 13, padding: "6px 8px" }} /></div>
+                  <div><div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>CUT OFF</div><TimeF value={erCut} onChange={setErCut} style={{ ...inp, fontSize: 13, padding: "6px 8px" }} /></div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 6 }}>
+                  <div><div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>FME</div><TimeF value={erFme} onChange={setErFme} style={{ ...inp, fontSize: 13, padding: "6px 8px" }} /></div>
+                  <div><div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>CUADRE</div><TimeF value={erCua} onChange={setErCua} style={{ ...inp, fontSize: 13, padding: "6px 8px" }} /></div>
+                  <div><div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>SALIDA</div><TimeF value={erSal} onChange={setErSal} style={{ ...inp, fontSize: 13, padding: "6px 8px" }} /></div>
+                </div>
+                <div style={{ marginBottom: 8 }}><div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>COMENTARIO</div><TF value={erCom} onChange={setErCom} placeholder="Comentario (opcional)" style={{ ...inp, fontSize: 12, padding: "6px 8px" }} /></div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={saveEditRoute} style={{ flex: 1, padding: 8, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Guardar</button>
+                  <button onClick={() => setEditRoute(null)} style={{ flex: 1, padding: 8, borderRadius: 8, border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Cancelar</button>
+                </div>
+              </div>
+            );
+
             return (
               <div key={r.id} style={{ background: allDone ? "rgba(16,185,129,0.06)" : isCan ? "rgba(51,65,85,0.15)" : isUrg ? "rgba(239,68,68,0.06)" : S.card, borderRadius: 10, marginBottom: 4, border: `1px solid ${allDone ? "rgba(16,185,129,0.2)" : isUrg ? "rgba(239,68,68,0.25)" : S.cardBorder}`, padding: "8px 10px", opacity: isCan ? 0.4 : 1 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
@@ -654,7 +685,10 @@ function App() {
                     <span style={{ fontSize: 13, fontWeight: 800, color: allDone ? "#6ee7b7" : isUrg ? "#ef4444" : S.text, textDecoration: isCan || allDone ? "line-through" : "none" }}>{r.dest}</span>
                     {isUrg && <span style={{ fontSize: 8, color: "#ef4444", fontWeight: 800, background: "rgba(239,68,68,0.15)", padding: "2px 6px", borderRadius: 4 }}>!</span>}
                   </div>
-                  <button onClick={() => cancelRoute(r.id)} style={{ background: "none", border: "none", color: S.dim, fontSize: 12, cursor: "pointer" }}>✕</button>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <button onClick={() => startEditRoute(r)} style={{ background: "none", border: "none", color: S.dim, fontSize: 11, cursor: "pointer" }}>✏️</button>
+                    <button onClick={() => cancelRoute(r.id)} style={{ background: "none", border: "none", color: S.dim, fontSize: 12, cursor: "pointer" }}>✕</button>
+                  </div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
                   {[["cutoff", "CUT OFF", r.cutoff], ["fme", "FME", r.fme], ["cuadre", "CUADRE", r.cuadre], ["salida", "SALIDA", r.salida]].map(([f, lbl, val]) => (
