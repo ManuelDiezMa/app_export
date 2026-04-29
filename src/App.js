@@ -291,7 +291,7 @@ function App() {
             <div><label style={{ fontSize: 10, color: S.dim, marginBottom: 4, display: "block" }}>Uds/h Clasificador</label><NF value={capCl} onCommit={v => setCapCl(v || 1)} /></div>
           </div>
           <Lbl>Fin de turno (ref.)</Lbl>
-          <input type="time" value={finT} onChange={e => setFinT(e.target.value)} style={{ ...inp, marginBottom: 8 }} />
+          <input type="text" placeholder="HH:MM" inputMode="numeric" value={finT} onChange={e => setFinT(e.target.value)} style={{ ...inp, marginBottom: 8 }} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginBottom: 12 }}>
             <div><label style={{ fontSize: 10, color: S.dim, marginBottom: 4, display: "block" }}>Horas efectivas turno (sin descanso)</label><NF value={horasTurno * 10} onCommit={v => setHorasTurno(v / 10)} placeholder="75" style={{ ...inp }} /></div>
           </div>
@@ -306,7 +306,7 @@ function App() {
           ))}
           {!addDropOpen ? <button onClick={() => setAddDropOpen(true)} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ Añadir</button>
           : <div style={{ display: "flex", gap: 6 }}>
-              <input type="time" value={nDT} onChange={e => setNDT(e.target.value)} style={{ ...inp, fontSize: 12, padding: 6, width: 80 }} />
+              <input type="text" placeholder="HH:MM" inputMode="numeric" value={nDT} onChange={e => setNDT(e.target.value)} style={{ ...inp, fontSize: 12, padding: 6, width: 80 }} />
               <TF value={nDN} onChange={setNDN} placeholder="Nota" style={{ ...inp, fontSize: 12, padding: 6, flex: 1 }} />
               <button onClick={() => { if (nDT) { setDrops(p => [...p, { id: Date.now(), time: nDT, note: nDN }]); setNDT(""); setNDN(""); setAddDropOpen(false); } }} style={{ border: "none", background: "#3b82f6", color: "#fff", borderRadius: 6, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+</button>
               <button onClick={() => setAddDropOpen(false)} style={{ border: "none", background: "rgba(51,65,85,0.5)", color: S.dim, borderRadius: 6, padding: "6px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
@@ -613,7 +613,7 @@ function App() {
               <Lbl>¿Qué se ha hecho esta hora?</Lbl>
               <div style={{ marginBottom: 10 }}>
                 <label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 4 }}>Hora</label>
-                <input type="time" value={hlH} onChange={e => setHlH(e.target.value)} style={inp} />
+                <input type="text" placeholder="HH:MM" inputMode="numeric" value={hlH} onChange={e => setHlH(e.target.value)} style={inp} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
                 <div><label style={{ fontSize: 10, color: "#ef4444", display: "block", marginBottom: 4 }}>Uds picadas</label><NF value={hlP} onCommit={setHlP} /></div>
@@ -804,13 +804,13 @@ function App() {
             <Card sx={{ marginTop: 6 }}>
               <Lbl>Nueva ruta</Lbl>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cut Off</label><input type="time" value={nRCut} onChange={e => setNRCut(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cut Off</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRCut} onChange={e => setNRCut(e.target.value)} style={inp} /></div>
                 <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Destino</label><TF value={nRDest} onChange={setNRDest} placeholder="Destino" /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>FME</label><input type="time" value={nRFme} onChange={e => setNRFme(e.target.value)} style={inp} /></div>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cuadre</label><input type="time" value={nRCua} onChange={e => setNRCua(e.target.value)} style={inp} /></div>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Salida</label><input type="time" value={nRSal} onChange={e => setNRSal(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>FME</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRFme} onChange={e => setNRFme(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cuadre</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRCua} onChange={e => setNRCua(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Salida</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRSal} onChange={e => setNRSal(e.target.value)} style={inp} /></div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => { if (nRDest.trim() && nRCut) { setRoutes(p => [...p, { id: Date.now(), cutoff: nRCut, dest: nRDest.trim(), fme: nRFme, cuadre: nRCua, salida: nRSal, status: "pending", comment: "" }].sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0")))); setNRCut(""); setNRDest(""); setNRFme(""); setNRCua(""); setNRSal(""); setShowAddRoute(false); } }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Añadir</button>
