@@ -14,24 +14,24 @@ const DEF_ZONES = [
   { id: "facturacion", name: "Facturación", ci: 1 },
   { id: "runner", name: "Runner", ci: 2 },
   { id: "pesaje", name: "Pesaje de Bultos", ci: 3 },
-  { id: "picking_agv", name: "Picking AGV", ci: 4 },
-  { id: "clerks", name: "Clerks", ci: 5 },
+  { id: "pt_agv", name: "PT - AGV", ci: 4 },
+  { id: "clerk", name: "Clerk", ci: 5 },
   { id: "rfid", name: "RFID", ci: 6 },
-  { id: "picking_manual", name: "Picking Manual", ci: 7 },
+  { id: "reasignacion", name: "Reasignación", ci: 7 },
+  { id: "pt_manual", name: "PT Manual", ci: 0 },
   { id: "extra", name: "Extra", ci: 3 },
 ];
 const DEF_ROLES = [
-  { id: "clasif_doblado", name: "Doblado", z: "clasificacion", type: "indirecto", icon: "👔" },
-  { id: "clasif_perchado", name: "Perchado", z: "clasificacion", type: "indirecto", icon: "👗" },
+  { id: "clasificacion_op", name: "Clasificación", z: "clasificacion", type: "indirecto", icon: "📋" },
   { id: "facturacion_op", name: "Facturación", z: "facturacion", type: "indirecto", icon: "🧾" },
-  { id: "runner_agv", name: "AGV", z: "runner", type: "indirecto", icon: "🏃" },
-  { id: "runner_manual", name: "Manual", z: "runner", type: "indirecto", icon: "🏃‍♂️" },
-  { id: "runner_totales", name: "Totales", z: "runner", type: "indirecto", icon: "📊" },
+  { id: "runner_op", name: "Runner", z: "runner", type: "indirecto", icon: "🏃" },
   { id: "pesaje_op", name: "Pesaje", z: "pesaje", type: "indirecto", icon: "⚖️" },
-  { id: "picker_agv", name: "Picker AGV", z: "picking_agv", type: "directo", icon: "🤖" },
-  { id: "clerk_op", name: "Clerk", z: "clerks", type: "indirecto", icon: "🖥️" },
+  { id: "pt_agv_op", name: "PT AGV", z: "pt_agv", type: "directo", icon: "🤖" },
+  { id: "clerk_op", name: "Clerk", z: "clerk", type: "indirecto", icon: "🖥️" },
   { id: "rfid_op", name: "RFID", z: "rfid", type: "indirecto", icon: "📡" },
-  { id: "picker_manual", name: "Picker Manual", z: "picking_manual", type: "directo", icon: "📦" },
+  { id: "reasignacion_op", name: "Reasignación", z: "reasignacion", type: "indirecto", icon: "🔄" },
+  { id: "pt_manual_op", name: "PT Manual", z: "pt_manual", type: "directo", icon: "📦" },
+  { id: "extra_op", name: "Extra", z: "extra", type: "tarea_extra", icon: "➕" },
 ];
 
 const ZC = ["#3b82f6","#8b5cf6","#f59e0b","#10b981","#ef4444","#6366f1","#14b8a6","#f97316"];
@@ -124,7 +124,8 @@ function App() {
   const [nRCut, setNRCut] = useState(""); const [nRDest, setNRDest] = useState(""); const [nRFme, setNRFme] = useState(""); const [nRCua, setNRCua] = useState(""); const [nRSal, setNRSal] = useState("");
   const [routeImgLoading, setRouteImgLoading] = useState(false);
   const [routeImgError, setRouteImgError] = useState(null);
-  const routeFileRef = useRef(null);
+  const routeCamRef = useRef(null);
+  const routeGalRef = useRef(null);
 
   // Route image handler - compress + send to Claude
   const handleRouteImg = async (file) => {
@@ -208,11 +209,11 @@ function App() {
   const asig = tDir + tInd + tExt;
   const sinA = tG - asig;
   const tpi = tDir > 0 ? (tInd / tDir).toFixed(2) : "—";
-  const pAGV = g("picker_agv"), pMan = g("picker_manual");
+  const pAGV = g("pt_agv_op"), pMan = g("pt_manual_op");
   const salA = pAGV * objAGV, salM = pMan * objManual, salT = salA + salM;
   const clTot = roles.filter(r => r.z === "clasificacion").reduce((a, r) => a + g(r.id), 0);
   const capH = clTot * capCl;
-  const rAGV = g("runner_agv"); const rNeed = pAGV > 0 ? Math.ceil(pAGV / ratioR) : 0;
+  const rAGV = g("runner_op"); const rNeed = pAGV > 0 ? Math.ceil(pAGV / ratioR) : 0;
 
   // Hourly averages
   const totPicR = hourLogs.reduce((a, l) => a + l.picadas, 0);
@@ -719,15 +720,11 @@ function App() {
           <Card>
             <Lbl>Cargar rutas del día</Lbl>
             <p style={{ fontSize: 11, color: S.dim, marginBottom: 10 }}>Haz una foto a la hoja de rutas o súbela desde galería.</p>
+            <input ref={routeCamRef} type="file" accept="image/*" capture="environment" onChange={e => { handleRouteImg(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
+            <input ref={routeGalRef} type="file" accept="image/*" onChange={e => { handleRouteImg(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
             <div style={{ display: "flex", gap: 8 }}>
-              <div style={{ flex: 1, position: "relative" }}>
-                <input type="file" accept="image/*" capture="environment" onChange={e => handleRouteImg(e.target.files?.[0])} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }} />
-                <div style={{ padding: 12, borderRadius: 10, border: "2px dashed rgba(59,130,246,0.3)", background: "rgba(59,130,246,0.05)", color: "#3b82f6", fontSize: 13, fontWeight: 700, textAlign: "center", cursor: "pointer" }}>📷 Cámara</div>
-              </div>
-              <div style={{ flex: 1, position: "relative" }}>
-                <input type="file" accept="image/*" onChange={e => handleRouteImg(e.target.files?.[0])} style={{ position: "absolute", inset: 0, opacity: 0, cursor: "pointer" }} />
-                <div style={{ padding: 12, borderRadius: 10, border: "2px dashed rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.05)", color: "#a78bfa", fontSize: 13, fontWeight: 700, textAlign: "center", cursor: "pointer" }}>🖼 Galería</div>
-              </div>
+              <button onClick={() => routeCamRef.current?.click()} disabled={routeImgLoading} style={{ flex: 1, padding: 12, borderRadius: 10, border: "2px dashed rgba(59,130,246,0.3)", background: "rgba(59,130,246,0.05)", color: "#3b82f6", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📷 Cámara</button>
+              <button onClick={() => routeGalRef.current?.click()} disabled={routeImgLoading} style={{ flex: 1, padding: 12, borderRadius: 10, border: "2px dashed rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.05)", color: "#a78bfa", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🖼 Galería</button>
             </div>
             {routeImgLoading && <div style={{ marginTop: 10, padding: 10, background: "rgba(59,130,246,0.1)", borderRadius: 8, fontSize: 12, color: "#93c5fd", textAlign: "center" }}>⏳ Leyendo rutas de la imagen...</div>}
             {routeImgError && <div style={{ marginTop: 10, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8, fontSize: 12, color: "#fca5a5" }}>{routeImgError}</div>}
@@ -739,45 +736,64 @@ function App() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <Lbl>Rutas del día</Lbl>
                 <div style={{ fontSize: 11, color: S.dim }}>
-                  <span style={{ color: "#10b981", fontWeight: 700 }}>{routes.filter(r => r.status === "done").length}</span>
+                  <span style={{ color: "#10b981", fontWeight: 700 }}>{routes.filter(r => r.status !== "cancelled" && (r.checks || {}).cutoff && (r.checks || {}).fme && (r.checks || {}).cuadre && (r.checks || {}).salida).length}</span>
                   <span> / {routes.filter(r => r.status !== "cancelled").length}</span>
                 </div>
               </div>
               <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 12, background: "rgba(51,65,85,0.3)" }}>
-                <div style={{ width: `${routes.filter(r => r.status !== "cancelled").length > 0 ? (routes.filter(r => r.status === "done").length / routes.filter(r => r.status !== "cancelled").length) * 100 : 0}%`, background: "#10b981", transition: "width 0.3s" }} />
+                <div style={{ width: `${routes.filter(r => r.status !== "cancelled").length > 0 ? (routes.filter(r => r.status !== "cancelled" && (r.checks || {}).cutoff && (r.checks || {}).fme && (r.checks || {}).cuadre && (r.checks || {}).salida).length / routes.filter(r => r.status !== "cancelled").length) * 100 : 0}%`, background: "#10b981", transition: "width 0.3s" }} />
               </div>
             </Card>
           )}
 
           {routes.map((r, i) => {
-            const isDone = r.status === "done";
             const isCancelled = r.status === "cancelled";
-            const cutM = toM(r.cutoff.includes(":") ? r.cutoff.padStart(5, "0") : r.cutoff);
-            const isUrgent = !isDone && !isCancelled && cutM > 0 && cutM - nowM < 60 && cutM - nowM > 0;
-            const isPast = !isDone && !isCancelled && cutM <= nowM;
+            const checks = r.checks || {};
+            const allDone = checks.cutoff && checks.fme && checks.cuadre && checks.salida;
+            const cutM = r.cutoff && r.cutoff.includes(":") ? toM(r.cutoff.padStart(5, "0")) : 0;
+            const isUrgent = !allDone && !isCancelled && cutM > 0 && cutM - nowM < 60 && cutM - nowM > 0;
+            const toggleCheck = (field) => {
+              setRoutes(p => p.map(x => x.id === r.id ? { ...x, checks: { ...(x.checks || {}), [field]: !(x.checks || {})[field] } } : x));
+            };
+            const cellStyle = (field) => ({
+              padding: "6px 4px", textAlign: "center", fontSize: 11, fontFamily: S.mono, fontWeight: 700, cursor: "pointer", borderRadius: 6, transition: "all 0.15s",
+              background: checks[field] ? "rgba(16,185,129,0.2)" : "transparent",
+              color: checks[field] ? "#6ee7b7" : isCancelled ? S.dim : S.sub,
+              textDecoration: isCancelled ? "line-through" : "none",
+            });
             return (
               <div key={r.id} style={{
-                background: isDone ? "rgba(16,185,129,0.08)" : isCancelled ? "rgba(51,65,85,0.2)" : isUrgent ? "rgba(239,68,68,0.08)" : S.card,
-                borderRadius: 12, marginBottom: 6, border: `1px solid ${isDone ? "rgba(16,185,129,0.2)" : isUrgent ? "rgba(239,68,68,0.3)" : S.cardBorder}`,
-                padding: "10px 12px", opacity: isCancelled ? 0.5 : 1,
+                background: allDone ? "rgba(16,185,129,0.06)" : isCancelled ? "rgba(51,65,85,0.15)" : isUrgent ? "rgba(239,68,68,0.06)" : S.card,
+                borderRadius: 10, marginBottom: 4, border: `1px solid ${allDone ? "rgba(16,185,129,0.2)" : isUrgent ? "rgba(239,68,68,0.25)" : S.cardBorder}`,
+                padding: "8px 10px", opacity: isCancelled ? 0.4 : 1,
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 800, fontFamily: S.mono, color: isUrgent ? "#ef4444" : isPast ? "#f59e0b" : S.text }}>{r.cutoff}</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: isDone ? "#6ee7b7" : isCancelled ? S.dim : S.text, textDecoration: isCancelled ? "line-through" : isDone ? "line-through" : "none" }}>{r.dest}</span>
-                    {isUrgent && <span style={{ fontSize: 9, color: "#ef4444", fontWeight: 700 }}>URGENTE</span>}
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: allDone ? "#6ee7b7" : isUrgent ? "#ef4444" : S.text, textDecoration: isCancelled ? "line-through" : allDone ? "line-through" : "none" }}>{r.dest}</span>
+                    {isUrgent && <span style={{ fontSize: 8, color: "#ef4444", fontWeight: 800, background: "rgba(239,68,68,0.15)", padding: "2px 6px", borderRadius: 4 }}>URGENTE</span>}
+                    {allDone && <span style={{ fontSize: 8, color: "#6ee7b7", fontWeight: 800 }}>✓</span>}
                   </div>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    <button onClick={() => setRoutes(p => p.map(x => x.id === r.id ? { ...x, status: x.status === "done" ? "pending" : "done" } : x))} style={{ background: isDone ? "rgba(16,185,129,0.2)" : "rgba(51,65,85,0.3)", border: "none", borderRadius: 6, padding: "4px 8px", fontSize: 11, cursor: "pointer", color: isDone ? "#6ee7b7" : S.dim, fontWeight: 700 }}>{isDone ? "✓" : "○"}</button>
-                    <button onClick={() => setRoutes(p => p.map(x => x.id === r.id ? { ...x, status: x.status === "cancelled" ? "pending" : "cancelled" } : x))} style={{ background: "rgba(51,65,85,0.3)", border: "none", borderRadius: 6, padding: "4px 6px", fontSize: 10, cursor: "pointer", color: S.dim }}>✕</button>
+                  <button onClick={() => setRoutes(p => p.map(x => x.id === r.id ? { ...x, status: x.status === "cancelled" ? "pending" : "cancelled", checks: {} } : x))} style={{ background: "none", border: "none", color: S.dim, fontSize: 12, cursor: "pointer" }}>✕</button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+                  <div onClick={() => toggleCheck("cutoff")} style={cellStyle("cutoff")}>
+                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>CUT OFF</div>
+                    {r.cutoff || "—"}
+                  </div>
+                  <div onClick={() => toggleCheck("fme")} style={cellStyle("fme")}>
+                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>FME</div>
+                    {r.fme || "—"}
+                  </div>
+                  <div onClick={() => toggleCheck("cuadre")} style={cellStyle("cuadre")}>
+                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>CUADRE</div>
+                    {r.cuadre || "—"}
+                  </div>
+                  <div onClick={() => toggleCheck("salida")} style={cellStyle("salida")}>
+                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>SALIDA</div>
+                    {r.salida || "—"}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 12, fontSize: 10, color: S.dim }}>
-                  <span>FME <b style={{ color: S.sub }}>{r.fme}</b></span>
-                  <span>Cuadre <b style={{ color: S.sub }}>{r.cuadre}</b></span>
-                  <span>Salida <b style={{ color: S.sub }}>{r.salida}</b></span>
-                </div>
-                {r.comment && <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 4 }}>{r.comment}</div>}
+                {r.comment && <div style={{ fontSize: 10, color: "#fbbf24", marginTop: 4 }}>{r.comment}</div>}
               </div>
             );
           })}
