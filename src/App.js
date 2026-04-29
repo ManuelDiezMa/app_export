@@ -60,6 +60,21 @@ function NF({ value, onCommit, placeholder, style }) {
     onBlur={() => { sL(value ? String(value) : ""); lv.current = value; }} />;
 }
 function TF({ value, onChange, placeholder, style }) { return <input type="text" value={value} placeholder={placeholder} style={style || inp} onChange={e => onChange(e.target.value)} />; }
+function TimeF({ value, onChange, style }) {
+  const handleChange = (e) => {
+    let v = e.target.value.replace(/[^0-9:]/g, "");
+    // Remove all colons to work with raw digits
+    const digits = v.replace(/:/g, "");
+    if (digits.length >= 3) {
+      v = digits.slice(0, 2) + ":" + digits.slice(2, 4);
+    } else {
+      v = digits;
+    }
+    if (v.length > 5) v = v.slice(0, 5);
+    onChange(v);
+  };
+  return <input type="text" inputMode="numeric" value={value} placeholder="HH:MM" style={style || inp} onChange={handleChange} />;
+}
 function EC({ count, onChange, warn }) {
   const [ed, sEd] = useState(false); const [l, sL] = useState(String(count)); const ref = useRef(null);
   useEffect(() => { if (!ed) sL(String(count)); }, [count, ed]);
@@ -529,7 +544,7 @@ function App() {
           {showHL && (
             <Card sx={{ borderColor: "rgba(59,130,246,0.3)" }}>
               <Lbl>¿Qué se ha hecho esta hora?</Lbl>
-              <div style={{ marginBottom: 10 }}><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 4 }}>Hora</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={hlH} onChange={e => setHlH(e.target.value)} style={inp} /></div>
+              <div style={{ marginBottom: 10 }}><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 4 }}>Hora</label><TimeF value={hlH} onChange={setHlH} /></div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
                 <div><label style={{ fontSize: 10, color: "#ef4444", display: "block", marginBottom: 4 }}>Uds picadas</label><NF value={hlP} onCommit={setHlP} /></div>
                 <div><label style={{ fontSize: 10, color: "#f59e0b", display: "block", marginBottom: 4 }}>Uds clasificadas</label><NF value={hlC} onCommit={setHlC} /></div>
@@ -658,13 +673,13 @@ function App() {
           ) : (
             <Card sx={{ marginTop: 6 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cut Off</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRCut} onChange={e => setNRCut(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cut Off</label><TimeF value={nRCut} onChange={setNRCut} /></div>
                 <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Destino</label><TF value={nRDest} onChange={setNRDest} placeholder="Destino" /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>FME</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRFme} onChange={e => setNRFme(e.target.value)} style={inp} /></div>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cuadre</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRCua} onChange={e => setNRCua(e.target.value)} style={inp} /></div>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Salida</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRSal} onChange={e => setNRSal(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>FME</label><TimeF value={nRFme} onChange={setNRFme} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cuadre</label><TimeF value={nRCua} onChange={setNRCua} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Salida</label><TimeF value={nRSal} onChange={setNRSal} /></div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={addRoute} style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Añadir</button>
