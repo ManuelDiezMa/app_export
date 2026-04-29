@@ -80,6 +80,45 @@ function Lbl({ children }) { return <div style={{ fontSize: 10, fontWeight: 700,
 function Pill({ color, children }) { return <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: color + "22", color }}>{children}</span>; }
 function toM(t) { if (!t || !t.includes(":")) return 0; const p = t.split(":").map(Number); return p[0] * 60 + (p[1] || 0); }
 
+/* ═══ PASSWORD GATE ═══ */
+const PASS_HASH = "a3f2b8c1d9e7"; // simple hash of TurnoAM2026
+function hashPass(p) { let h = 0; for (let i = 0; i < p.length; i++) { h = ((h << 5) - h) + p.charCodeAt(i); h |= 0; } return Math.abs(h).toString(16); }
+const CORRECT_HASH = hashPass("TurnoAM2026");
+
+function LoginGate({ children }) {
+  const [auth, setAuth] = useState(() => {
+    try { return sessionStorage.getItem("exp_auth") === CORRECT_HASH; } catch { return false; }
+  });
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState(false);
+
+  if (auth) return children;
+
+  const tryLogin = () => {
+    if (hashPass(pw) === CORRECT_HASH) {
+      try { sessionStorage.setItem("exp_auth", CORRECT_HASH); } catch {}
+      setAuth(true);
+    } else { setErr(true); setPw(""); }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: `linear-gradient(135deg, #0f172a 0%, #1a1a2e 50%, #16213e 100%)`, fontFamily: "'DM Sans',sans-serif", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;700;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet" />
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 3, color: "#3b82f6", marginBottom: 8 }}>CONTROL DE PERSONAL</div>
+      <div style={{ fontSize: 28, fontWeight: 800, background: "linear-gradient(135deg, #f1f5f9, #94a3b8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginBottom: 30 }}>Export</div>
+      <div style={{ width: "100%", maxWidth: 300 }}>
+        <input type="password" value={pw} onChange={e => { setPw(e.target.value); setErr(false); }}
+          onKeyDown={e => { if (e.key === "Enter") tryLogin(); }}
+          placeholder="Contraseña"
+          style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: `1px solid ${err ? "rgba(239,68,68,0.5)" : "rgba(71,85,105,0.5)"}`, background: "rgba(15,23,42,0.6)", color: "#f1f5f9", fontSize: 16, fontWeight: 600, fontFamily: "'DM Sans',sans-serif", boxSizing: "border-box", textAlign: "center", outline: "none" }} />
+        {err && <div style={{ textAlign: "center", color: "#ef4444", fontSize: 12, fontWeight: 600, marginTop: 8 }}>Contraseña incorrecta</div>}
+        <button onClick={tryLogin}
+          style={{ width: "100%", padding: 14, borderRadius: 12, border: "none", background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer", marginTop: 12 }}>Entrar</button>
+      </div>
+    </div>
+  );
+}
+
 /* ═══ APP ═══ */
 function App() {
   const [zones] = useState(DEF_ZONES);
@@ -654,4 +693,8 @@ function App() {
   );
 }
 
-export default App;
+function AppWithAuth() {
+  return <LoginGate><App /></LoginGate>;
+}
+
+export default AppWithAuth;
