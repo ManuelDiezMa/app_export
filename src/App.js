@@ -196,7 +196,7 @@ function App() {
   const [addRZ, setAddRZ] = useState(null); const [nRN, setNRN] = useState(""); const [nRT, setNRT] = useState("indirecto");
   const [addDropOpen, setAddDropOpen] = useState(false); const [nDT, setNDT] = useState(""); const [nDN, setNDN] = useState("");
   const [showHL, setShowHL] = useState(false);
-  const [hlH, setHlH] = useState(""); const [hlP, setHlP] = useState(0); const [hlC, setHlC] = useState(0);
+  const [hlH, setHlH] = useState(""); const [hlP, setHlP] = useState(0); const [hlC, setHlC] = useState(0); const [hlPC, setHlPC] = useState(0);
   const [showDL, setShowDL] = useState(false);
   const [dlP, setDlP] = useState(0); const [dlR, setDlR] = useState(0);
   const [routes, setRoutes] = usePersist("routes", []);
@@ -302,6 +302,12 @@ function App() {
   // Hourly averages
   const totPicR = hourLogs.reduce((a, l) => a + l.picadas, 0);
   const totClaR = hourLogs.reduce((a, l) => a + l.clasificadas, 0);
+  const ratioLogs = hourLogs.filter(l => l.picadas > 0 && Number.isFinite(l.clasifRatioReal));
+  const realClasifRatio = ratioLogs.length > 0 ? ratioLogs.reduce((a, l) => a + l.clasifRatioReal, 0) / ratioLogs.length : null;
+  const planClasifRatio = ratioClasifPicado / 100;
+  const mixClasifRatio = realClasifRatio !== null ? (planClasifRatio + realClasifRatio) / 2 : planClasifRatio;
+  const activeClasifRatio = projectionMode === "real" ? (realClasifRatio ?? planClasifRatio) : projectionMode === "mix" ? mixClasifRatio : planClasifRatio;
+  const activeClasifPct = Math.round(activeClasifRatio * 100);
   const totHH = hourLogs.length * (tDir + tInd);
   const tphAcum = totHH > 0 ? (totPicR / totHH).toFixed(1) : "—";
   const tClasStaff = roles.filter(r => r.z === "clasificacion").reduce((a, r) => a + g(r.id), 0);
@@ -317,7 +323,7 @@ function App() {
   const activePH = projectionMode === "real" ? realPH : projectionMode === "mix" ? mixPH : expectedPH;
   const activeCH = projectionMode === "real" ? realCH : projectionMode === "mix" ? mixCH : expectedCH;
   const picarFin = hRest > 0 && activePH > 0 ? Math.max(0, pP - activePH * hRest) : pP;
-  const clasifFin = hRest > 0 && activeCH > 0 ? Math.max(0, (pC + Math.min(pP, activePH * hRest)) - activeCH * hRest) : pC;
+  const clasifFin = hRest > 0 && activeCH > 0 ? Math.max(0, (pC + Math.min(pP, activePH * hRest) * activeClasifRatio) - activeCH * hRest) : pC;
   const rfidFin = hRest > 0 && activePH > 0 ? Math.max(0, pR - activePH * hRest) : pR;
   const actDrops = [...drops].sort((a, b) => toM(a.time) - toM(b.time));
   const nextDr = actDrops.find(d => toM(d.time) > nowM);
@@ -356,10 +362,14 @@ function App() {
     const tph = (tDir + tInd) > 0 ? (hlP / (tDir + tInd)).toFixed(1) : "0";
     const avgPic = tDir > 0 ? Math.round(hlP / tDir) : 0;
     const avgCla = tClasStaff > 0 ? Math.round(hlC / tClasStaff) : 0;
-    setHourLogs(p => [...p, { id: Date.now(), hora: logH, picadas: hlP, clasificadas: hlC, personal: asig, dir: tDir, ind: tInd, clasifStaff: tClasStaff, tph, avgPic, avgCla, expectedPic: expectedPH, expectedClas: expectedCH }]);
+    const prevClasif = pC;
+    const pendingClasifReal = hlPC;
+    const clasifGenerada = Math.max(0, pendingClasifReal + hlC - prevClasif);
+    const clasifRatioReal = hlP > 0 ? clasifGenerada / hlP : null;
+    setHourLogs(p => [...p, { id: Date.now(), hora: logH, picadas: hlP, clasificadas: hlC, pendClasifReal: pendingClasifReal, prevClasif, clasifGenerada, clasifRatioReal, personal: asig, dir: tDir, ind: tInd, clasifStaff: tClasStaff, tph, avgPic, avgCla, expectedPic: expectedPH, expectedClas: expectedCH }]);
     setPP(prev => Math.max(0, prev - hlP));
-    setPC(prev => Math.max(0, prev - hlC + Math.round(hlP * (ratioClasifPicado / 100))));
-    setHlH(""); setHlP(0); setHlC(0); setShowHL(false);
+    setPC(pendingClasifReal);
+    setHlH(""); setHlP(0); setHlC(0); setHlPC(0); setShowHL(false);
   };
   const addDropLog = () => {
     setDropLogs(p => [...p, { id: Date.now(), hora: hAct, picar: dlP, clasif: pC, rfid: dlR }]);
@@ -595,6 +605,10 @@ function App() {
                       <span style={{ color: S.dim }}> cla</span>
                     </span>
                   </div>
+                  <div style={{ marginTop: 8, background: "rgba(245,158,11,0.08)", borderRadius: 10, padding: "8px 12px", display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                    <span style={{ color: S.sub }}>Ratio clasif/picado real</span>
+                    <span style={{ fontFamily: S.mono, fontWeight: 800, color: "#fbbf24" }}>{realClasifRatio !== null ? `${Math.round(realClasifRatio * 100)}%` : "sin datos"}</span>
+                  </div>
                 </>
               )}
             </Card>
@@ -627,6 +641,10 @@ function App() {
                   <div style={{ fontSize: 8, color: S.dim, fontWeight: 800 }}>CLASIF. USADA</div>
                   <div style={{ fontSize: 15, fontWeight: 800, color: "#6ee7b7", fontFamily: S.mono }}>{activeCH.toLocaleString()} uds/h</div>
                 </div>
+              </div>
+              <div style={{ background: "rgba(245,158,11,0.08)", borderRadius: 8, padding: "6px 8px", border: "1px solid rgba(245,158,11,0.16)", marginBottom: 8, display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ fontSize: 10, color: S.dim, fontWeight: 800 }}>RATIO REAL CLASIF/PICADO</span>
+                <span style={{ fontSize: 12, color: "#fbbf24", fontFamily: S.mono, fontWeight: 800 }}>{realClasifRatio !== null ? `${Math.round(realClasifRatio * 100)}%` : "sin datos"} · usado {activeClasifPct}%</span>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
                 {[{ l: "Picar", v: picarFin, c: "#ef4444" }, { l: "Clasif.", v: clasifFin, c: "#f59e0b" }, { l: "RFID", v: rfidFin, c: "#a78bfa" }].map(k => (
@@ -795,7 +813,7 @@ function App() {
           </Card>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-            <button onClick={() => { setShowHL(true); setShowDL(false); }} style={{ padding: 14, borderRadius: 12, border: "none", background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>⏱ Registro hora</button>
+            <button onClick={() => { setHlPC(pC); setShowHL(true); setShowDL(false); }} style={{ padding: 14, borderRadius: 12, border: "none", background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>⏱ Registro hora</button>
             <button onClick={() => { setShowDL(true); setShowHL(false); }} style={{ padding: 14, borderRadius: 12, border: "none", background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>📦 Caída</button>
           </div>
 
@@ -810,8 +828,18 @@ function App() {
                 <div><label style={{ fontSize: 10, color: "#ef4444", display: "block", marginBottom: 4 }}>Uds picadas</label><NF value={hlP} onCommit={setHlP} /></div>
                 <div><label style={{ fontSize: 10, color: "#f59e0b", display: "block", marginBottom: 4 }}>Uds clasificadas</label><NF value={hlC} onCommit={setHlC} /></div>
               </div>
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 10, color: "#f59e0b", display: "block", marginBottom: 4 }}>Pend. clasif real al cierre</label>
+                <NF value={hlPC} onCommit={setHlPC} style={{ ...inp, borderColor: "rgba(245,158,11,0.35)" }} />
+              </div>
+              {hlP > 0 && (
+                <div style={{ fontSize: 11, color: S.dim, marginBottom: 10, background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.16)", padding: 8, borderRadius: 8 }}>
+                  Ratio estimado esta hora: <b style={{ color: "#fbbf24" }}>{Math.round((Math.max(0, hlPC + hlC - pC) / hlP) * 100)}%</b>
+                  <span style={{ marginLeft: 4 }}>({Math.max(0, hlPC + hlC - pC).toLocaleString()} uds nuevas a clasif.)</span>
+                </div>
+              )}
               <div style={{ fontSize: 11, color: S.dim, marginBottom: 10, background: "rgba(51,65,85,0.3)", padding: 8, borderRadius: 8 }}>
-                Esperado: <b style={{ color: "#3b82f6" }}>{salT.toLocaleString()}</b> pic · <b style={{ color: "#10b981" }}>{capH.toLocaleString()}</b> cla
+                Esperado: <b style={{ color: "#3b82f6" }}>{salT.toLocaleString()}</b> pic · <b style={{ color: "#10b981" }}>{capH.toLocaleString()}</b> cla · ratio activo <b style={{ color: "#fbbf24" }}>{activeClasifPct}%</b>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={addHourLog} style={{ flex: 1, padding: 12, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Guardar</button>
@@ -844,12 +872,14 @@ function App() {
               <Lbl>Registro por horas</Lbl>
               {hourLogs.map((l, i) => {
                 const dP = l.picadas - l.expectedPic, dC = l.clasificadas - l.expectedClas;
+                const ratioTxt = Number.isFinite(l.clasifRatioReal) ? `${Math.round(l.clasifRatioReal * 100)}%` : "—";
                 return (
                   <div key={l.id} style={{ padding: "8px 0", borderBottom: i < hourLogs.length - 1 ? `1px solid ${S.cardBorder}` : "none" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 14, fontWeight: 700, color: S.text }}>{l.hora}</span>
                         <Pill color="#14b8a6">TPH {l.tph}</Pill>
+                        <Pill color="#fbbf24">R {ratioTxt}</Pill>
                         {l.avgPic !== undefined && <Pill color="#3b82f6">{l.avgPic}/pic</Pill>}
                         {l.avgCla !== undefined && <Pill color="#f59e0b">{l.avgCla}/cla</Pill>}
                       </div>
@@ -865,6 +895,14 @@ function App() {
                         <span style={{ color: S.dim }}>Cla: </span>
                         <span style={{ fontWeight: 700, fontFamily: S.mono, color: "#f59e0b" }}>{l.clasificadas.toLocaleString()}</span>
                         <span style={{ fontSize: 9, color: dC >= 0 ? "#10b981" : "#ef4444", marginLeft: 3 }}>{dC >= 0 ? "+" : ""}{dC.toLocaleString()}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: S.dim }}>Pend cla: </span>
+                        <span style={{ fontWeight: 700, fontFamily: S.mono, color: "#fbbf24" }}>{(l.pendClasifReal ?? 0).toLocaleString()}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: S.dim }}>Nueva cla: </span>
+                        <span style={{ fontWeight: 700, fontFamily: S.mono, color: "#fbbf24" }}>{(l.clasifGenerada ?? 0).toLocaleString()}</span>
                       </div>
                     </div>
                   </div>
