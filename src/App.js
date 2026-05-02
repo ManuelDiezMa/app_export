@@ -65,6 +65,46 @@ function NF({ value, onCommit, placeholder, style }) {
     onBlur={() => { sL(value ? String(value) : ""); lv.current = value; }} />;
 }
 function TF({ value, onChange, placeholder, style }) { return <input type="text" value={value} placeholder={placeholder} style={style || inp} onChange={e => onChange(e.target.value)} />; }
+function fmtTime(digits) {
+  const d = digits.replace(/[^0-9]/g, "").slice(0, 4);
+  if (d.length <= 2) return d;
+  if (d.length === 3 && Number(d[0]) > 2) return `0${d[0]}:${d.slice(1)}`;
+  return `${d.slice(0, 2)}:${d.slice(2)}`;
+}
+function normalizeTime(value) {
+  const d = value.replace(/[^0-9]/g, "").slice(0, 4);
+  if (!d) return "";
+  if (d.length === 1) return `0${d}:00`;
+  if (d.length === 2) return `${d.padStart(2, "0")}:00`;
+  const raw = fmtTime(d);
+  const [h, m = ""] = raw.split(":");
+  const hh = Math.min(23, parseInt(h, 10) || 0);
+  const mm = Math.min(59, parseInt(m.padEnd(2, "0"), 10) || 0);
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+function focusNextTime(ref) {
+  const fields = [...document.querySelectorAll('[data-time-field="true"]')];
+  const i = fields.indexOf(ref.current);
+  const next = fields[i + 1];
+  if (next) { next.focus(); next.select(); }
+}
+function TimeF({ value, onChange, style, autoNext = true }) {
+  const ref = useRef(null);
+  const [l, sL] = useState(value || "");
+  useEffect(() => { if (document.activeElement !== ref.current) sL(value || ""); }, [value]);
+  return <input ref={ref} data-time-field="true" type="text" inputMode="numeric" pattern="[0-9]*" maxLength={5} value={l} placeholder="HH:MM" style={style || inp}
+    onChange={e => {
+      const digits = e.target.value.replace(/[^0-9]/g, "").slice(0, 4);
+      const complete = digits.length === 4 || (digits.length === 3 && Number(digits[0]) > 2);
+      const formatted = complete ? normalizeTime(digits) : fmtTime(digits);
+      sL(formatted); onChange(formatted);
+      if (autoNext && complete) setTimeout(() => focusNextTime(ref), 0);
+    }}
+    onBlur={() => { const n = normalizeTime(l); sL(n); onChange(n); }}
+    onKeyDown={e => {
+      if (e.key === "Enter") { e.preventDefault(); focusNextTime(ref); }
+    }} />;
+}
 function DF({ value, onCommit, placeholder, style }) {
   const ref = useRef(null);
   const [l, sL] = useState(value ? String(value) : "");
@@ -247,11 +287,12 @@ function App() {
 
   const moveZone = (i, d) => { setZones(p => { const n = [...p]; const ni = i + d; if (ni < 0 || ni >= n.length) return p; [n[i], n[ni]] = [n[ni], n[i]]; return n; }); };
   const addHourLog = () => {
-    if (!hlH) return;
+    const logH = normalizeTime(hlH);
+    if (!logH) return;
     const tph = (tDir + tInd) > 0 ? (hlP / (tDir + tInd)).toFixed(1) : "0";
     const avgPic = tDir > 0 ? Math.round(hlP / tDir) : 0;
     const avgCla = tClasStaff > 0 ? Math.round(hlC / tClasStaff) : 0;
-    setHourLogs(p => [...p, { id: Date.now(), hora: hlH, picadas: hlP, clasificadas: hlC, personal: asig, dir: tDir, ind: tInd, clasifStaff: tClasStaff, tph, avgPic, avgCla, expectedPic: expectedPH, expectedClas: expectedCH }]);
+    setHourLogs(p => [...p, { id: Date.now(), hora: logH, picadas: hlP, clasificadas: hlC, personal: asig, dir: tDir, ind: tInd, clasifStaff: tClasStaff, tph, avgPic, avgCla, expectedPic: expectedPH, expectedClas: expectedCH }]);
     setPP(prev => Math.max(0, prev - hlP));
     setPC(prev => Math.max(0, prev - hlC + Math.round(hlP * (ratioClasifPicado / 100))));
     setHlH(""); setHlP(0); setHlC(0); setShowHL(false);
@@ -305,7 +346,7 @@ function App() {
             <div><label style={{ fontSize: 10, color: S.dim, marginBottom: 4, display: "block" }}>Horas efectivas turno</label><DF value={horasTurno} onCommit={setHorasTurno} placeholder="7.5" style={{ ...inp }} /></div>
           </div>
           <Lbl>Fin de turno (ref.)</Lbl>
-          <input type="text" placeholder="HH:MM" inputMode="numeric" value={finT} onChange={e => setFinT(e.target.value)} style={{ ...inp, marginBottom: 8 }} />
+          <TimeF value={finT} onChange={setFinT} style={{ ...inp, marginBottom: 8 }} />
           <div style={{ fontSize: 10, color: S.dim, marginBottom: 12 }}>Turno efectivo: <b style={{ color: S.text }}>{horasTurno}h</b> · Ratio clasif→picado: <b style={{ color: S.text }}>{ratioClasifPicado}%</b></div>
           <Lbl>Horas de caída</Lbl>
           {actDrops.map(d => (
@@ -317,9 +358,9 @@ function App() {
           ))}
           {!addDropOpen ? <button onClick={() => setAddDropOpen(true)} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ Añadir</button>
           : <div style={{ display: "flex", gap: 6 }}>
-              <input type="text" placeholder="HH:MM" inputMode="numeric" value={nDT} onChange={e => setNDT(e.target.value)} style={{ ...inp, fontSize: 12, padding: 6, width: 80 }} />
+              <TimeF value={nDT} onChange={setNDT} style={{ ...inp, fontSize: 12, padding: 6, width: 80 }} />
               <TF value={nDN} onChange={setNDN} placeholder="Nota" style={{ ...inp, fontSize: 12, padding: 6, flex: 1 }} />
-              <button onClick={() => { if (nDT) { setDrops(p => [...p, { id: Date.now(), time: nDT, note: nDN }]); setNDT(""); setNDN(""); setAddDropOpen(false); } }} style={{ border: "none", background: "#3b82f6", color: "#fff", borderRadius: 6, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+</button>
+              <button onClick={() => { const t = normalizeTime(nDT); if (t) { setDrops(p => [...p, { id: Date.now(), time: t, note: nDN }]); setNDT(""); setNDN(""); setAddDropOpen(false); } }} style={{ border: "none", background: "#3b82f6", color: "#fff", borderRadius: 6, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+</button>
               <button onClick={() => setAddDropOpen(false)} style={{ border: "none", background: "rgba(51,65,85,0.5)", color: S.dim, borderRadius: 6, padding: "6px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
             </div>}
         </div>
@@ -624,7 +665,7 @@ function App() {
               <Lbl>¿Qué se ha hecho esta hora?</Lbl>
               <div style={{ marginBottom: 10 }}>
                 <label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 4 }}>Hora</label>
-                <input type="text" placeholder="HH:MM" inputMode="numeric" value={hlH} onChange={e => setHlH(e.target.value)} style={inp} />
+                <TimeF value={hlH} onChange={setHlH} style={inp} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
                 <div><label style={{ fontSize: 10, color: "#ef4444", display: "block", marginBottom: 4 }}>Uds picadas</label><NF value={hlP} onCommit={setHlP} /></div>
@@ -768,6 +809,8 @@ function App() {
             const isDone = (field) => checks[field] === CHECK_DONE || checks[field] === true;
             const isProgress = (field) => checks[field] === CHECK_PROGRESS;
             const allDone = isDone("cutoff") && isDone("fme") && isDone("cuadre") && isDone("salida");
+            const hasProgress = ["cutoff", "fme", "cuadre", "salida"].some(isProgress);
+            const hasDone = ["cutoff", "fme", "cuadre", "salida"].some(isDone);
             const cutM = r.cutoff && r.cutoff.includes(":") ? toM(r.cutoff.padStart(5, "0")) : 0;
             const isUrgent = !isDone("cutoff") && !isProgress("cutoff") && !isCancelled && cutM > 0 && cutM - nowM < 60;
             const toggleCheck = (field) => {
@@ -782,22 +825,25 @@ function App() {
               }));
             };
             const cellStyle = (field) => ({
-              padding: "6px 4px", textAlign: "center", fontSize: 11, fontFamily: S.mono, fontWeight: 700, cursor: "pointer", borderRadius: 6, transition: "all 0.15s",
-              background: isDone(field) ? "rgba(16,185,129,0.2)" : isProgress(field) ? "rgba(245,158,11,0.18)" : "transparent",
-              border: `1px solid ${isDone(field) ? "rgba(16,185,129,0.28)" : isProgress(field) ? "rgba(245,158,11,0.3)" : "transparent"}`,
+              padding: "7px 4px", textAlign: "center", fontSize: 11, fontFamily: S.mono, fontWeight: 800, cursor: "pointer", borderRadius: 8, transition: "all 0.15s", minHeight: 44,
+              background: isDone(field) ? "rgba(16,185,129,0.2)" : isProgress(field) ? "rgba(245,158,11,0.18)" : "rgba(15,23,42,0.42)",
+              border: `1px solid ${isDone(field) ? "rgba(16,185,129,0.32)" : isProgress(field) ? "rgba(245,158,11,0.34)" : "rgba(148,163,184,0.1)"}`,
               color: isDone(field) ? "#6ee7b7" : isProgress(field) ? "#fbbf24" : isCancelled ? S.dim : S.sub,
               textDecoration: isCancelled ? "line-through" : "none",
+              boxShadow: isDone(field) || isProgress(field) ? "inset 0 1px 0 rgba(255,255,255,0.04)" : "none",
             });
             return (
               <div key={r.id} style={{
-                background: allDone ? "rgba(16,185,129,0.06)" : isCancelled ? "rgba(51,65,85,0.15)" : isUrgent ? "rgba(239,68,68,0.06)" : S.card,
-                borderRadius: 10, marginBottom: 4, border: `1px solid ${allDone ? "rgba(16,185,129,0.2)" : isUrgent ? "rgba(239,68,68,0.25)" : S.cardBorder}`,
-                padding: "8px 10px", opacity: isCancelled ? 0.4 : 1,
+                background: allDone ? "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(17,24,39,0.82))" : isCancelled ? "rgba(51,65,85,0.15)" : isUrgent ? "linear-gradient(135deg, rgba(239,68,68,0.12), rgba(17,24,39,0.82))" : hasProgress ? "linear-gradient(135deg, rgba(245,158,11,0.1), rgba(17,24,39,0.82))" : S.card,
+                borderRadius: 12, marginBottom: 8, border: `1px solid ${allDone ? "rgba(16,185,129,0.24)" : isUrgent ? "rgba(239,68,68,0.3)" : hasProgress ? "rgba(245,158,11,0.28)" : S.cardBorder}`,
+                borderLeft: `4px solid ${allDone ? "#10b981" : isUrgent ? "#ef4444" : hasProgress ? "#f59e0b" : hasDone ? "#3b82f6" : "rgba(148,163,184,0.22)"}`,
+                padding: "9px 10px", opacity: isCancelled ? 0.4 : 1, boxShadow: "0 10px 24px rgba(0,0,0,0.15)",
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: allDone ? "#6ee7b7" : isUrgent ? "#ef4444" : S.text, textDecoration: isCancelled ? "line-through" : allDone ? "line-through" : "none" }}>{r.dest}</span>
                     {isUrgent && <span style={{ fontSize: 8, color: "#ef4444", fontWeight: 800, background: "rgba(239,68,68,0.15)", padding: "2px 6px", borderRadius: 4 }}>URGENTE</span>}
+                    {hasProgress && !isUrgent && !allDone && <span style={{ fontSize: 8, color: "#fbbf24", fontWeight: 800, background: "rgba(245,158,11,0.14)", padding: "2px 6px", borderRadius: 4 }}>EN CURSO</span>}
                     {allDone && <span style={{ fontSize: 8, color: "#6ee7b7", fontWeight: 800 }}>✓</span>}
                   </div>
                   <button onClick={() => setRoutes(p => p.map(x => x.id === r.id ? { ...x, status: x.status === "cancelled" ? "pending" : "cancelled", checks: {} } : x))} style={{ background: "none", border: "none", color: S.dim, fontSize: 12, cursor: "pointer" }}>✕</button>
@@ -831,16 +877,16 @@ function App() {
             <Card sx={{ marginTop: 6 }}>
               <Lbl>Nueva ruta</Lbl>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cut Off</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRCut} onChange={e => setNRCut(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cut Off</label><TimeF value={nRCut} onChange={setNRCut} style={inp} /></div>
                 <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Destino</label><TF value={nRDest} onChange={setNRDest} placeholder="Destino" /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>FME</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRFme} onChange={e => setNRFme(e.target.value)} style={inp} /></div>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cuadre</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRCua} onChange={e => setNRCua(e.target.value)} style={inp} /></div>
-                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Salida</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRSal} onChange={e => setNRSal(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>FME</label><TimeF value={nRFme} onChange={setNRFme} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cuadre</label><TimeF value={nRCua} onChange={setNRCua} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Salida</label><TimeF value={nRSal} onChange={setNRSal} style={inp} /></div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => { if (nRDest.trim() && nRCut) { setRoutes(p => [...p, { id: Date.now(), cutoff: nRCut, dest: nRDest.trim(), fme: nRFme, cuadre: nRCua, salida: nRSal, status: "pending", comment: "" }].sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0")))); setNRCut(""); setNRDest(""); setNRFme(""); setNRCua(""); setNRSal(""); setShowAddRoute(false); } }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Añadir</button>
+                <button onClick={() => { const cutoff = normalizeTime(nRCut); if (nRDest.trim() && cutoff) { const fme = normalizeTime(nRFme), cuadre = normalizeTime(nRCua), salida = normalizeTime(nRSal); setRoutes(p => [...p, { id: Date.now(), cutoff, dest: nRDest.trim(), fme, cuadre, salida, status: "pending", comment: "" }].sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0")))); setNRCut(""); setNRDest(""); setNRFme(""); setNRCua(""); setNRSal(""); setShowAddRoute(false); } }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Añadir</button>
                 <button onClick={() => setShowAddRoute(false)} style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
               </div>
             </Card>
