@@ -97,3 +97,773 @@ function Card({ children, sx }) { return <div style={{ background: S.card, backd
 function Lbl({ children }) { return <div style={{ fontSize: 10, fontWeight: 700, color: S.dim, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8 }}>{children}</div>; }
 function Pill({ color, children }) { return <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: color + "22", color }}>{children}</span>; }
 function toM(t) { const p = t.split(":").map(Number); return p[0] * 60 + (p[1] || 0); }
+
+/* ═══ APP ═══ */
+function App() {
+  const [zones, setZones] = usePersist("zones2", DEF_ZONES);
+  const [roles, setRoles] = usePersist("roles2", DEF_ROLES);
+  const [staff, setStaff] = usePersist("staff2", {});
+  const [objAGV, setObjAGV] = usePersist("objAGV", 172);
+  const [objManual, setObjManual] = usePersist("objManual", 80);
+  const [ratioR, setRatioR] = usePersist("ratioR", 6);
+  const [capCl, setCapCl] = usePersist("capCl", 300);
+  const [ratioClasifPicado, setRatioClasifPicado] = usePersist("ratioClasifPicado", 70);
+  const [finT, setFinT] = usePersist("finT", "14:00");
+  const [horasTurno, setHorasTurno] = usePersist("horasTurno", 7.5);
+  const [drops, setDrops] = usePersist("drops", [
+    { id: 1, time: "10:30", note: "" }, { id: 2, time: "11:30", note: "Solo jueves" },
+    { id: 3, time: "12:30", note: "" }, { id: 4, time: "13:30", note: "" },
+  ]);
+  const [pP, setPP] = usePersist("pP2", 0);
+  const [pC, setPC] = usePersist("pC2", 0);
+  const [pR, setPR] = usePersist("pR2", 0);
+  const [tG, setTG] = usePersist("tG2", 0);
+  const [hourLogs, setHourLogs] = usePersist("hourLogs", []);
+  const [dropLogs, setDropLogs] = usePersist("dropLogs", []);
+  const [tab, setTab] = useState("dashboard");
+  const [showCfg, setShowCfg] = useState(false);
+  const [now, setNow] = useState(new Date());
+  const [eZone, setEZone] = useState(null); const [eZN, setEZN] = useState("");
+  const [addZoneOpen, setAddZoneOpen] = useState(false); const [nZN, setNZN] = useState("");
+  const [addRZ, setAddRZ] = useState(null); const [nRN, setNRN] = useState(""); const [nRT, setNRT] = useState("indirecto");
+  const [addDropOpen, setAddDropOpen] = useState(false); const [nDT, setNDT] = useState(""); const [nDN, setNDN] = useState("");
+  const [showHL, setShowHL] = useState(false);
+  const [hlH, setHlH] = useState(""); const [hlP, setHlP] = useState(0); const [hlC, setHlC] = useState(0);
+  const [showDL, setShowDL] = useState(false);
+  const [dlP, setDlP] = useState(0); const [dlR, setDlR] = useState(0);
+  const [routes, setRoutes] = usePersist("routes", []);
+  const [showAddRoute, setShowAddRoute] = useState(false);
+  const [nRCut, setNRCut] = useState(""); const [nRDest, setNRDest] = useState(""); const [nRFme, setNRFme] = useState(""); const [nRCua, setNRCua] = useState(""); const [nRSal, setNRSal] = useState("");
+  const [routeImgLoading, setRouteImgLoading] = useState(false);
+  const [routeImgError, setRouteImgError] = useState(null);
+  const routeCamRef = useRef(null);
+  const routeGalRef = useRef(null);
+
+  // Route image handler - compress + send to Claude
+  const handleRouteImg = async (file) => {
+    if (!file) return;
+    setRouteImgLoading(true); setRouteImgError(null);
+    try {
+      // Compress image to max 1200px wide
+      const b64 = await new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const maxW = 1200;
+          const scale = img.width > maxW ? maxW / img.width : 1;
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.8);
+          res(dataUrl.split(",")[1]);
+        };
+        img.onerror = () => rej(new Error("No se pudo leer la imagen"));
+        const reader = new FileReader();
+        reader.onload = (e) => { img.src = e.target.result; };
+        reader.readAsDataURL(file);
+      });
+
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2000,
+          messages: [{
+            role: "user",
+            content: [
+              { type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64 } },
+              { type: "text", text: 'This is a warehouse shipping routes table. Extract ALL visible routes. For each route, get: CUT OFF time, Destino (destination name), FME time, CUADRE time, SALIDA CAMION time, and any comments. Ignore rows that are clearly crossed out or cancelled UNLESS they have a comment like "CANCELADO". Return ONLY a JSON array, nothing else:\n[{"cutoff":"HH:MM","dest":"Name","fme":"HH:MM","cuadre":"HH:MM","salida":"HH:MM","comment":""}]\nUse 24h format. If a field is unreadable use empty string. Include cancelled routes with comment "CANCELADO".' }
+            ]
+          }]
+        })
+      });
+      if (!response.ok) throw new Error(`API error ${response.status}`);
+      const data = await response.json();
+      const text = (data.content || []).map(i => i.text || "").join("");
+      const clean = text.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const newRoutes = parsed.map((r, i) => ({
+          id: Date.now() + i,
+          cutoff: r.cutoff || "",
+          dest: r.dest || "",
+          fme: r.fme || "",
+          cuadre: r.cuadre || "",
+          salida: r.salida || "",
+          status: (r.comment || "").toUpperCase().includes("CANCEL") ? "cancelled" : "pending",
+          comment: r.comment || "",
+        }));
+        setRoutes(newRoutes);
+      } else {
+        setRouteImgError("No se encontraron rutas en la imagen.");
+      }
+    } catch (err) {
+      setRouteImgError(`Error: ${err.message || "No se pudo leer"}. Añade las rutas manualmente.`);
+    }
+    setRouteImgLoading(false);
+  };
+
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(t); }, []);
+  const hAct = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const nowM = now.getHours() * 60 + now.getMinutes();
+  const finM = toM(finT);
+  const mRest = Math.max(0, finM - nowM);
+  const hRest = mRest / 60;
+
+  const g = useCallback(id => staff[id] || 0, [staff]);
+  const sc = useCallback((id, v) => setStaff(p => ({ ...p, [id]: Math.max(0, v) })), []);
+
+  const tDir = roles.filter(r => r.type === "directo").reduce((a, r) => a + g(r.id), 0);
+  const tInd = roles.filter(r => r.type === "indirecto").reduce((a, r) => a + g(r.id), 0);
+  const tExt = roles.filter(r => r.type === "tarea_extra").reduce((a, r) => a + g(r.id), 0);
+  const asig = tDir + tInd + tExt;
+  const sinA = tG - asig;
+  const tpi = tDir > 0 ? (tInd / tDir).toFixed(2) : "—";
+  const pAGV = g("pt_agv_op"), pMan = g("pt_manual_op");
+  const salA = pAGV * objAGV, salM = pMan * objManual, salT = salA + salM;
+  const clTot = roles.filter(r => r.z === "clasificacion").reduce((a, r) => a + g(r.id), 0);
+  const capH = clTot * capCl;
+  const rAGV = g("runner_op"); const rNeed = pAGV > 0 ? Math.ceil(pAGV / ratioR) : 0;
+
+  // Hourly averages
+  const totPicR = hourLogs.reduce((a, l) => a + l.picadas, 0);
+  const totClaR = hourLogs.reduce((a, l) => a + l.clasificadas, 0);
+  const totHH = hourLogs.length * (tDir + tInd);
+  const tphAcum = totHH > 0 ? (totPicR / totHH).toFixed(1) : "—";
+  const tClasStaff = roles.filter(r => r.z === "clasificacion").reduce((a, r) => a + g(r.id), 0);
+  const avgPicPerPerson = hourLogs.length > 0 && tDir > 0 ? Math.round(totPicR / (hourLogs.length * tDir)) : null;
+  const avgClaPerPerson = hourLogs.length > 0 && tClasStaff > 0 ? Math.round(totClaR / (hourLogs.length * tClasStaff)) : null;
+
+  const expectedPH = salT;
+  const expectedCH = capH;
+  const picarFin = hRest > 0 && salT > 0 ? Math.max(0, pP - salT * hRest) : pP;
+  const clasifFin = hRest > 0 && capH > 0 ? Math.max(0, (pC + Math.min(pP, salT * hRest)) - capH * hRest) : pC;
+  const rfidFin = hRest > 0 && salT > 0 ? Math.max(0, pR - salT * hRest) : pR;
+  const actDrops = [...drops].sort((a, b) => toM(a.time) - toM(b.time));
+  const nextDr = actDrops.find(d => toM(d.time) > nowM);
+  const mToDr = nextDr ? toM(nextDr.time) - nowM : null;
+
+  const moveZone = (i, d) => { setZones(p => { const n = [...p]; const ni = i + d; if (ni < 0 || ni >= n.length) return p; [n[i], n[ni]] = [n[ni], n[i]]; return n; }); };
+  const addHourLog = () => {
+    if (!hlH) return;
+    const tph = (tDir + tInd) > 0 ? (hlP / (tDir + tInd)).toFixed(1) : "0";
+    const avgPic = tDir > 0 ? Math.round(hlP / tDir) : 0;
+    const avgCla = tClasStaff > 0 ? Math.round(hlC / tClasStaff) : 0;
+    setHourLogs(p => [...p, { id: Date.now(), hora: hlH, picadas: hlP, clasificadas: hlC, personal: asig, dir: tDir, ind: tInd, clasifStaff: tClasStaff, tph, avgPic, avgCla, expectedPic: expectedPH, expectedClas: expectedCH }]);
+    setPP(prev => Math.max(0, prev - hlP));
+    setPC(prev => Math.max(0, prev - hlC + Math.round(hlP * (ratioClasifPicado / 100))));
+    setHlH(""); setHlP(0); setHlC(0); setShowHL(false);
+  };
+  const addDropLog = () => {
+    setDropLogs(p => [...p, { id: Date.now(), hora: hAct, picar: dlP, clasif: pC, rfid: dlR }]);
+    setPP(dlP); setPR(dlR);
+    setDlP(0); setDlR(0); setShowDL(false);
+  };
+  const resetTurno = () => {
+    if (!window.confirm("¿Nuevo turno? Se borran datos operativos.")) return;
+    setPP(0); setPC(0); setPR(0); setTG(0); setStaff({}); setHourLogs([]); setDropLogs([]);
+    setRoutes(p => p.map(r => ({ ...r, status: "pending", checks: {} })));
+  };
+
+  const gcol = (z) => ZC[z.ci % ZC.length];
+
+  return (
+    <div style={{ minHeight: "100vh", background: `linear-gradient(180deg, ${S.bg} 0%, #111827 48%, #0b1120 100%)`, fontFamily: S.sans, color: S.text, maxWidth: 520, margin: "0 auto", boxShadow: "0 0 80px rgba(0,0,0,0.28)" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700;9..40,800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet" />
+
+      {/* HEADER */}
+      <div style={{ padding: "18px 20px 14px", background: "rgba(11,17,32,0.94)", backdropFilter: "blur(20px)", borderBottom: "1px solid rgba(148,163,184,0.14)", position: "sticky", top: 0, zIndex: 100, display: "flex", justifyContent: "space-between", alignItems: "flex-end", boxShadow: "0 10px 28px rgba(0,0,0,0.24)" }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 3, color: "#3b82f6" }}>CONTROL DE PERSONAL</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 4 }}>
+            <span style={{ fontSize: 22, fontWeight: 800, background: "linear-gradient(135deg, #f1f5f9, #94a3b8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Export</span>
+            <span style={{ fontSize: 16, fontWeight: 700, color: "#3b82f6", fontFamily: S.mono }}>{hAct}</span>
+            {mRest > 0 && <span style={{ fontSize: 11, color: mRest > 60 ? "#10b981" : "#ef4444", fontWeight: 700 }}>~{hRest.toFixed(1)}h</span>}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button title="Nuevo turno" onClick={resetTurno} style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5", borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🔄</button>
+          <button title="Configuración" onClick={() => setShowCfg(!showCfg)} style={{ background: showCfg ? "rgba(59,130,246,0.2)" : "rgba(51,65,85,0.5)", border: "1px solid rgba(148,163,184,0.2)", color: S.sub, borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>⚙</button>
+        </div>
+      </div>
+
+      {/* CONFIG */}
+      {showCfg && (
+        <div style={{ padding: "12px 20px 16px", background: "rgba(17,24,39,0.92)", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>
+          <Lbl>Productividad (uds/h)</Lbl>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <div><label style={{ fontSize: 11, color: "#3b82f6", marginBottom: 4, display: "block", fontWeight: 700 }}>Media PT AGV / trabajador</label><NF value={objAGV} onCommit={setObjAGV} /></div>
+            <div><label style={{ fontSize: 11, color: "#10b981", marginBottom: 4, display: "block", fontWeight: 700 }}>Media PT Manual / trabajador</label><NF value={objManual} onCommit={setObjManual} /></div>
+            <div><label style={{ fontSize: 11, color: "#f59e0b", marginBottom: 4, display: "block", fontWeight: 700 }}>Media Clasificador / trabajador</label><NF value={capCl} onCommit={v => setCapCl(v || 1)} /></div>
+            <div><label style={{ fontSize: 11, color: "#14b8a6", marginBottom: 4, display: "block", fontWeight: 700 }}>Clasif. generada por picado (%)</label><NF value={ratioClasifPicado} onCommit={v => setRatioClasifPicado(Math.max(0, Math.min(100, v || 0)))} /></div>
+          </div>
+          <Lbl>Ratios</Lbl>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <div><label style={{ fontSize: 10, color: S.dim, marginBottom: 4, display: "block" }}>Pickers/Runner</label><NF value={ratioR} onCommit={v => setRatioR(v || 1)} /></div>
+            <div><label style={{ fontSize: 10, color: S.dim, marginBottom: 4, display: "block" }}>Horas efectivas turno</label><DF value={horasTurno} onCommit={setHorasTurno} placeholder="7.5" style={{ ...inp }} /></div>
+          </div>
+          <Lbl>Fin de turno (ref.)</Lbl>
+          <input type="text" placeholder="HH:MM" inputMode="numeric" value={finT} onChange={e => setFinT(e.target.value)} style={{ ...inp, marginBottom: 8 }} />
+          <div style={{ fontSize: 10, color: S.dim, marginBottom: 12 }}>Turno efectivo: <b style={{ color: S.text }}>{horasTurno}h</b> · Ratio clasif→picado: <b style={{ color: S.text }}>{ratioClasifPicado}%</b></div>
+          <Lbl>Horas de caída</Lbl>
+          {actDrops.map(d => (
+            <div key={d.id} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, fontFamily: S.mono, minWidth: 50, color: S.text }}>{d.time}</span>
+              <span style={{ fontSize: 11, color: S.dim, flex: 1 }}>{d.note}</span>
+              <button onClick={() => setDrops(p => p.filter(x => x.id !== d.id))} style={{ background: "none", border: "none", color: S.dim, fontSize: 14, cursor: "pointer" }}>×</button>
+            </div>
+          ))}
+          {!addDropOpen ? <button onClick={() => setAddDropOpen(true)} style={{ background: "none", border: "none", color: "#3b82f6", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ Añadir</button>
+          : <div style={{ display: "flex", gap: 6 }}>
+              <input type="text" placeholder="HH:MM" inputMode="numeric" value={nDT} onChange={e => setNDT(e.target.value)} style={{ ...inp, fontSize: 12, padding: 6, width: 80 }} />
+              <TF value={nDN} onChange={setNDN} placeholder="Nota" style={{ ...inp, fontSize: 12, padding: 6, flex: 1 }} />
+              <button onClick={() => { if (nDT) { setDrops(p => [...p, { id: Date.now(), time: nDT, note: nDN }]); setNDT(""); setNDN(""); setAddDropOpen(false); } }} style={{ border: "none", background: "#3b82f6", color: "#fff", borderRadius: 6, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+</button>
+              <button onClick={() => setAddDropOpen(false)} style={{ border: "none", background: "rgba(51,65,85,0.5)", color: S.dim, borderRadius: 6, padding: "6px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
+            </div>}
+        </div>
+      )}
+
+      {/* TABS */}
+      <div style={{ display: "flex", gap: 4, padding: "8px 10px", background: "rgba(11,17,32,0.76)", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>
+        {[["dashboard", "Dashboard"], ["turno", "Turno"], ["situacion", "Situación"], ["rutas", "Rutas PT"]].map(([id, l]) => (
+          <button key={id} onClick={() => setTab(id)} style={{ padding: "10px 6px", border: `1px solid ${tab === id ? "rgba(59,130,246,0.35)" : "transparent"}`, borderRadius: 8, background: tab === id ? "rgba(59,130,246,0.14)" : "transparent", color: tab === id ? "#93c5fd" : S.dim, fontSize: 12, fontWeight: 800, cursor: "pointer", flex: 1, textAlign: "center" }}>{l}</button>
+        ))}
+      </div>
+
+      <div style={{ padding: "16px 20px 100px" }}>
+
+        {/* ═══ DASHBOARD ═══ */}
+        {tab === "dashboard" && (<>
+          {/* KPIs */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginBottom: 14 }}>
+            {[{ l: "Por Picar", v: pP, c: "#ef4444" }, { l: "Por Clasif.", v: pC, c: "#f59e0b" }, { l: "Pdt RFID", v: pR, c: "#a78bfa" }, { l: "Personas", v: asig, c: "#3b82f6" }].map(k => (
+              <div key={k.l} style={{ background: S.card, borderRadius: 12, padding: "10px 4px", textAlign: "center", border: `1px solid ${S.cardBorder}` }}>
+                <div style={{ fontSize: 8, color: S.dim, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{k.l}</div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: k.c, fontFamily: S.mono, marginTop: 3 }}>{k.v.toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Staff table */}
+          {asig > 0 && (
+            <Card>
+              <Lbl>Personal</Lbl>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: TC.directo, marginBottom: 6 }}>DIRECTOS <span style={{ fontFamily: S.mono }}>{tDir}</span></div>
+                  {roles.filter(r => r.type === "directo").map(r => (
+                    <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 12 }}>
+                      <span style={{ color: S.sub }}>{r.icon} {r.name}</span>
+                      <span style={{ fontWeight: 800, fontFamily: S.mono, color: TC.directo }}>{g(r.id)}</span>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: TC.indirecto, marginBottom: 6 }}>INDIRECTOS <span style={{ fontFamily: S.mono }}>{tInd}</span></div>
+                  {roles.filter(r => r.type === "indirecto").map(r => (
+                    <div key={r.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 12 }}>
+                      <span style={{ color: S.sub }}>{r.icon} {r.name}</span>
+                      <span style={{ fontWeight: 800, fontFamily: S.mono, color: TC.indirecto }}>{g(r.id)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {tExt > 0 && <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(71,85,105,0.3)", fontSize: 10, color: TC.tarea_extra, fontWeight: 700 }}>EXTRA ({tExt}) — no cuenta para TPH</div>}
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(71,85,105,0.3)", fontSize: 12, fontWeight: 700 }}>
+                <span style={{ color: S.sub }}>TPI <span style={{ fontFamily: S.mono, color: tDir > 0 && tInd / tDir > 0.5 ? "#ef4444" : "#10b981" }}>{tpi}</span></span>
+                <span>{sinA === 0 && tG > 0 ? <span style={{ color: "#10b981" }}>✓</span> : sinA > 0 ? <span style={{ color: "#f59e0b" }}>{sinA} libres</span> : sinA < 0 ? <span style={{ color: "#ef4444" }}>{Math.abs(sinA)} extra</span> : null}</span>
+              </div>
+            </Card>
+          )}
+
+          {/* Flow */}
+          {salT > 0 && (
+            <Card>
+              <Lbl>Flujo operativo</Lbl>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                <div style={{ background: "rgba(59,130,246,0.1)", borderRadius: 12, padding: 10, textAlign: "center", border: "1px solid rgba(59,130,246,0.2)" }}>
+                  <div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>SALIDA PICADA</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: "#3b82f6", fontFamily: S.mono }}>{salT.toLocaleString()}</div>
+                  <div style={{ fontSize: 9, color: S.dim }}>uds/h esperadas</div>
+                </div>
+                <div style={{ background: capH >= salT + pC ? "rgba(16,185,129,0.1)" : "rgba(239,68,68,0.1)", borderRadius: 12, padding: 10, textAlign: "center", border: `1px solid ${capH >= salT + pC ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}` }}>
+                  <div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>CAP. CLASIFICAR</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: capH >= salT + pC ? "#10b981" : "#ef4444", fontFamily: S.mono }}>{capH.toLocaleString()}</div>
+                  <div style={{ fontSize: 9, color: S.dim }}>uds/h</div>
+                </div>
+              </div>
+              {pAGV > 0 && rAGV < rNeed && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: "rgba(239,68,68,0.1)", color: "#fca5a5" }}>🏃 Runners: {rAGV}/{rNeed}</div>}
+              {capH < salT + pC ? <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: "rgba(239,68,68,0.1)", color: "#fca5a5" }}>⚠ Cuello de botella clasificación</div>
+                : clTot > 0 && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: "rgba(16,185,129,0.1)", color: "#6ee7b7" }}>✓ Clasificación absorbe</div>}
+            </Card>
+          )}
+
+          {/* Productivity averages */}
+          {(tDir + tInd) > 0 && (
+            <Card sx={{ borderLeft: "3px solid #14b8a6" }}>
+              <Lbl>Productividad</Lbl>
+              {/* TPH */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                <div style={{ background: "rgba(20,184,166,0.1)", borderRadius: 12, padding: 10, textAlign: "center", border: "1px solid rgba(20,184,166,0.2)" }}>
+                  <div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>TPH ESPERADO</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: "#14b8a6", fontFamily: S.mono, marginTop: 2 }}>{salT > 0 ? (salT / (tDir + tInd)).toFixed(1) : "—"}</div>
+                </div>
+                <div style={{ background: hourLogs.length > 0 ? "rgba(20,184,166,0.1)" : "rgba(51,65,85,0.3)", borderRadius: 12, padding: 10, textAlign: "center", border: `1px solid ${hourLogs.length > 0 ? "rgba(20,184,166,0.2)" : "rgba(71,85,105,0.2)"}` }}>
+                  <div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>TPH REAL</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, color: hourLogs.length > 0 ? "#14b8a6" : S.dim, fontFamily: S.mono, marginTop: 2 }}>{tphAcum}</div>
+                  <div style={{ fontSize: 9, color: S.dim }}>{hourLogs.length > 0 ? `${hourLogs.length}h registradas` : "Sin datos"}</div>
+                </div>
+              </div>
+              {/* Per-person averages */}
+              {hourLogs.length > 0 && (
+                <>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: S.dim, letterSpacing: 1, marginBottom: 8 }}>MEDIA POR PERSONA (ACUMULADO)</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                    <div style={{ background: "rgba(59,130,246,0.08)", borderRadius: 10, padding: "8px 10px", border: "1px solid rgba(59,130,246,0.15)" }}>
+                      <div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>PICADAS/PICKER·H</div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: "#3b82f6", fontFamily: S.mono, marginTop: 2 }}>{avgPicPerPerson !== null ? avgPicPerPerson : "—"}</div>
+                      <div style={{ fontSize: 9, color: S.dim }}>{totPicR.toLocaleString()} / {hourLogs.length * tDir} picker·h</div>
+                    </div>
+                    <div style={{ background: "rgba(245,158,11,0.08)", borderRadius: 10, padding: "8px 10px", border: "1px solid rgba(245,158,11,0.15)" }}>
+                      <div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>CLASIF/CLASIF·H</div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: "#f59e0b", fontFamily: S.mono, marginTop: 2 }}>{avgClaPerPerson !== null ? avgClaPerPerson : "—"}</div>
+                      <div style={{ fontSize: 9, color: S.dim }}>{totClaR.toLocaleString()} / {hourLogs.length * tClasStaff} clasif·h</div>
+                    </div>
+                  </div>
+                  {/* Totals */}
+                  <div style={{ background: "rgba(51,65,85,0.3)", borderRadius: 10, padding: "8px 12px", display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                    <span style={{ color: S.sub }}>Total acumulado</span>
+                    <span style={{ fontFamily: S.mono, fontWeight: 700 }}>
+                      <span style={{ color: "#3b82f6" }}>{totPicR.toLocaleString()}</span>
+                      <span style={{ color: S.dim }}> pic · </span>
+                      <span style={{ color: "#f59e0b" }}>{totClaR.toLocaleString()}</span>
+                      <span style={{ color: S.dim }}> cla</span>
+                    </span>
+                  </div>
+                </>
+              )}
+            </Card>
+          )}
+
+          {/* Next drop */}
+          {nextDr && <div style={{ background: "rgba(245,158,11,0.08)", borderRadius: 12, padding: "10px 14px", marginBottom: 12, border: "1px solid rgba(245,158,11,0.2)", fontSize: 12 }}>
+            <span style={{ fontWeight: 700, color: "#fbbf24" }}>⏰ {nextDr.time}</span>
+            <span style={{ color: S.dim, marginLeft: 6 }}>({mToDr < 60 ? `${mToDr}min` : `${(mToDr / 60).toFixed(1)}h`})</span>
+            {nextDr.note && <span style={{ color: "#f59e0b", marginLeft: 6, fontSize: 10 }}>{nextDr.note}</span>}
+          </div>}
+
+          {/* Projection */}
+          {salT > 0 && (pP > 0 || pC > 0) && hRest > 0 && (
+            <Card sx={{ borderLeft: "3px solid #3b82f6" }}>
+              <Lbl>Proyección ~{finT}</Lbl>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                {[{ l: "Picar", v: picarFin, c: "#ef4444" }, { l: "Clasif.", v: clasifFin, c: "#f59e0b" }, { l: "RFID", v: rfidFin, c: "#a78bfa" }].map(k => (
+                  <div key={k.l} style={{ background: k.v > 0 ? `${k.c}11` : "rgba(16,185,129,0.08)", borderRadius: 10, padding: "8px 4px", textAlign: "center", border: `1px solid ${k.v > 0 ? k.c + "33" : "rgba(16,185,129,0.2)"}` }}>
+                    <div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>{k.l}</div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: k.v > 0 ? k.c : "#10b981", fontFamily: S.mono, marginTop: 2 }}>{Math.round(k.v).toLocaleString()}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Distribution */}
+          {asig > 0 && (
+            <Card>
+              <Lbl>Distribución</Lbl>
+              <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", marginBottom: 10 }}>
+                {zones.map(z => { const c = roles.filter(r => r.z === z.id).reduce((a, r) => a + g(r.id), 0); const p = (c / asig) * 100; if (p === 0) return null; return <div key={z.id} style={{ width: `${p}%`, background: gcol(z) }} />; })}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                {zones.map(z => { const c = roles.filter(r => r.z === z.id).reduce((a, r) => a + g(r.id), 0); if (c === 0) return null; return <div key={z.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0" }}><div style={{ width: 8, height: 8, borderRadius: 2, background: gcol(z) }} /><span style={{ fontSize: 11, color: S.sub }}>{z.name}</span><span style={{ fontSize: 12, fontWeight: 800, color: S.text, marginLeft: "auto", fontFamily: S.mono }}>{c}</span></div>; })}
+              </div>
+            </Card>
+          )}
+
+          {asig === 0 && pP === 0 && (
+            <Card sx={{ textAlign: "center", padding: "30px 20px" }}>
+              <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.6 }}>👋</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: S.sub }}>Inicio de turno</div>
+              <div style={{ fontSize: 12, color: S.dim, marginTop: 4 }}>Ve a <b style={{ color: S.text }}>Turno</b> para empezar</div>
+            </Card>
+          )}
+        </>)}
+
+        {/* ═══ TURNO ═══ */}
+        {tab === "turno" && (<>
+          <Card>
+            <Lbl>¿Qué tienes?</Lbl>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+              <div><label style={{ fontSize: 10, color: "#ef4444", display: "block", marginBottom: 4, fontWeight: 600 }}>Pend. picar</label><NF value={pP} onCommit={setPP} style={{ ...inp, fontSize: 16, textAlign: "center", padding: 10 }} /></div>
+              <div><label style={{ fontSize: 10, color: "#f59e0b", display: "block", marginBottom: 4, fontWeight: 600 }}>Pend. clasif.</label><NF value={pC} onCommit={setPC} style={{ ...inp, fontSize: 16, textAlign: "center", padding: 10 }} /></div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div><label style={{ fontSize: 10, color: "#a78bfa", display: "block", marginBottom: 4, fontWeight: 600 }}>Pend. RFID</label><NF value={pR} onCommit={setPR} style={{ ...inp, fontSize: 16, textAlign: "center", padding: 10 }} /></div>
+              <div><label style={{ fontSize: 10, color: "#3b82f6", display: "block", marginBottom: 4, fontWeight: 600 }}>Personas</label><NF value={tG} onCommit={setTG} style={{ ...inp, fontSize: 16, textAlign: "center", padding: 10 }} /></div>
+            </div>
+          </Card>
+
+          {tG > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: sinA === 0 ? "rgba(16,185,129,0.1)" : sinA < 0 ? "rgba(239,68,68,0.1)" : "rgba(245,158,11,0.1)", borderRadius: 10, padding: "10px 14px", marginBottom: 12, border: `1px solid ${sinA === 0 ? "rgba(16,185,129,0.2)" : sinA < 0 ? "rgba(239,68,68,0.2)" : "rgba(245,158,11,0.2)"}` }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: sinA === 0 ? "#6ee7b7" : sinA < 0 ? "#fca5a5" : "#fcd34d" }}>{sinA === 0 ? "✓ Todos" : sinA > 0 ? `${sinA} libres` : `${Math.abs(sinA)} extra`}</span>
+              <div style={{ display: "flex", gap: 6, fontSize: 11 }}>
+                <Pill color={TC.directo}>{tDir} dir</Pill>
+                <Pill color={TC.indirecto}>{tInd} ind</Pill>
+                {tExt > 0 && <Pill color={TC.tarea_extra}>{tExt} ext</Pill>}
+              </div>
+            </div>
+          )}
+
+          {salT > 0 && (
+            <Card>
+              <Lbl>Impacto</Lbl>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ background: "rgba(59,130,246,0.1)", borderRadius: 10, padding: 10, textAlign: "center" }}><div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>SALIDA</div><div style={{ fontSize: 22, fontWeight: 800, color: "#3b82f6", fontFamily: S.mono }}>{salT.toLocaleString()}</div><div style={{ fontSize: 9, color: S.dim }}>uds/h</div></div>
+                <div style={{ background: "rgba(16,185,129,0.1)", borderRadius: 10, padding: 10, textAlign: "center" }}><div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>CAP. CLASIF.</div><div style={{ fontSize: 22, fontWeight: 800, color: "#10b981", fontFamily: S.mono }}>{capH.toLocaleString()}</div><div style={{ fontSize: 9, color: S.dim }}>uds/h</div></div>
+              </div>
+            </Card>
+          )}
+
+          {/* Zones */}
+          {zones.map((zone, zi) => {
+            const zr = roles.filter(r => r.z === zone.id); const col = gcol(zone);
+            const zt = zr.reduce((a, r) => a + g(r.id), 0);
+            const isEd = eZone === zone.id;
+            return (
+              <div key={zone.id} style={{ background: S.card, borderRadius: 14, marginBottom: 8, border: `1px solid ${S.cardBorder}`, overflow: "hidden" }}>
+                <div style={{ padding: "8px 12px", background: col + "15", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: `1px solid ${col}22` }}>
+                  {isEd ? (
+                    <div style={{ display: "flex", gap: 4, flex: 1, alignItems: "center" }}>
+                      <TF value={eZN} onChange={setEZN} placeholder="Nombre" style={{ ...inp, fontSize: 12, padding: "5px 8px", flex: 1 }} />
+                      <button onClick={() => { if (eZN.trim()) { setZones(p => p.map(z => z.id === zone.id ? { ...z, name: eZN.trim() } : z)); setEZone(null); } }} style={{ border: "none", background: "#10b981", color: "#fff", borderRadius: 6, padding: "5px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✓</button>
+                      <button onClick={() => setEZone(null)} style={{ border: "none", background: "rgba(51,65,85,0.5)", color: S.dim, borderRadius: 6, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
+                    </div>
+                  ) : (<>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <div style={{ display: "flex", flexDirection: "column" }}>
+                        <button onClick={() => moveZone(zi, -1)} style={{ background: "none", border: "none", color: S.dim, fontSize: 9, cursor: "pointer", padding: 0, lineHeight: 1 }}>▲</button>
+                        <button onClick={() => moveZone(zi, 1)} style={{ background: "none", border: "none", color: S.dim, fontSize: 9, cursor: "pointer", padding: 0, lineHeight: 1 }}>▼</button>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: col, textTransform: "uppercase", letterSpacing: 1 }}>{zone.name}</span>
+                      <button onClick={() => { setEZone(zone.id); setEZN(zone.name); }} style={{ background: "none", border: "none", color: S.dim, fontSize: 10, cursor: "pointer" }}>✏️</button>
+                      {zr.length === 0 && <button onClick={() => setZones(p => p.filter(z => z.id !== zone.id))} style={{ background: "none", border: "none", color: "#ef4444", fontSize: 10, cursor: "pointer" }}>🗑</button>}
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: col, fontFamily: S.mono }}>{zt}</span>
+                  </>)}
+                </div>
+                <div style={{ padding: "2px 12px" }}>
+                  {zr.map(role => (
+                    <div key={role.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 2px", borderBottom: `1px solid ${S.cardBorder}` }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 13 }}>{role.icon}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: S.sub }}>{role.name}</span>
+                        <Pill color={TC[role.type]}>{TL[role.type]}</Pill>
+                        <button onClick={() => { setRoles(p => p.filter(r => r.id !== role.id)); setStaff(p => { const n = { ...p }; delete n[role.id]; return n; }); }} style={{ background: "none", border: "none", color: S.dim, fontSize: 11, cursor: "pointer" }}>×</button>
+                      </div>
+                      <EC count={g(role.id)} onChange={v => sc(role.id, v)} warn={sinA < 0} />
+                    </div>
+                  ))}
+                  {addRZ === zone.id ? (
+                    <div style={{ padding: "6px 0" }}>
+                      <TF value={nRN} onChange={setNRN} placeholder="Nombre del rol" style={{ ...inp, fontSize: 12, padding: "6px 8px", marginBottom: 6 }} />
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <select value={nRT} onChange={e => setNRT(e.target.value)} style={{ padding: "5px 6px", borderRadius: 6, border: `1px solid ${S.cardBorder}`, background: S.surface, color: S.text, fontSize: 11 }}>
+                          <option value="directo">Directo</option><option value="indirecto">Indirecto</option><option value="tarea_extra">Tarea Extra</option>
+                        </select>
+                        <button onClick={() => { if (nRN.trim()) { setRoles(p => [...p, { id: "r_" + Date.now(), name: nRN.trim(), z: zone.id, type: nRT, icon: "👤" }]); setNRN(""); setNRT("indirecto"); setAddRZ(null); } }} style={{ border: "none", background: col, color: "#fff", borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Añadir</button>
+                        <button onClick={() => { setAddRZ(null); setNRN(""); }} style={{ border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, borderRadius: 6, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => { setAddRZ(zone.id); setNRN(""); setNRT("indirecto"); }} style={{ width: "100%", padding: 5, border: "none", background: "transparent", color: S.dim, fontSize: 10, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>+ Añadir rol</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {!addZoneOpen ? (
+            <button onClick={() => setAddZoneOpen(true)} style={{ width: "100%", padding: 12, borderRadius: 12, border: `2px dashed ${S.cardBorder}`, background: "transparent", color: S.dim, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>+ Añadir departamento</button>
+          ) : (
+            <Card>
+              <TF value={nZN} onChange={setNZN} placeholder="Nombre del departamento" style={{ ...inp, marginBottom: 10, fontSize: 14 }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => { if (nZN.trim()) { setZones(p => [...p, { id: "z_" + Date.now(), name: nZN.trim(), ci: zones.length % ZC.length }]); setNZN(""); setAddZoneOpen(false); } }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Crear</button>
+                <button onClick={() => { setAddZoneOpen(false); setNZN(""); }} style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
+              </div>
+            </Card>
+          )}
+        </>)}
+
+        {/* ═══ SITUACIÓN ═══ */}
+        {tab === "situacion" && (<>
+          <Card>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <Lbl>Estado — {hAct}</Lbl>
+              <Pill color="#3b82f6">{asig} personas</Pill>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+              {[{ l: "Por Picar", v: pP, c: "#ef4444" }, { l: "Por Clasif.", v: pC, c: "#f59e0b" }, { l: "Pdt RFID", v: pR, c: "#a78bfa" }].map(k => (
+                <div key={k.l} style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 9, color: S.dim, fontWeight: 700, textTransform: "uppercase" }}>{k.l}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: k.c, fontFamily: S.mono, marginTop: 4 }}>{k.v.toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+            <button onClick={() => { setShowHL(true); setShowDL(false); }} style={{ padding: 14, borderRadius: 12, border: "none", background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>⏱ Registro hora</button>
+            <button onClick={() => { setShowDL(true); setShowHL(false); }} style={{ padding: 14, borderRadius: 12, border: "none", background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>📦 Caída</button>
+          </div>
+
+          {showHL && (
+            <Card sx={{ borderColor: "rgba(59,130,246,0.3)" }}>
+              <Lbl>¿Qué se ha hecho esta hora?</Lbl>
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 4 }}>Hora</label>
+                <input type="text" placeholder="HH:MM" inputMode="numeric" value={hlH} onChange={e => setHlH(e.target.value)} style={inp} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: "#ef4444", display: "block", marginBottom: 4 }}>Uds picadas</label><NF value={hlP} onCommit={setHlP} /></div>
+                <div><label style={{ fontSize: 10, color: "#f59e0b", display: "block", marginBottom: 4 }}>Uds clasificadas</label><NF value={hlC} onCommit={setHlC} /></div>
+              </div>
+              <div style={{ fontSize: 11, color: S.dim, marginBottom: 10, background: "rgba(51,65,85,0.3)", padding: 8, borderRadius: 8 }}>
+                Esperado: <b style={{ color: "#3b82f6" }}>{salT.toLocaleString()}</b> pic · <b style={{ color: "#10b981" }}>{capH.toLocaleString()}</b> cla
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={addHourLog} style={{ flex: 1, padding: 12, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Guardar</button>
+                <button onClick={() => setShowHL(false)} style={{ flex: 1, padding: 12, borderRadius: 8, border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
+              </div>
+            </Card>
+          )}
+
+          {showDL && (
+            <Card sx={{ borderColor: "rgba(245,158,11,0.3)" }}>
+              <Lbl>Actualización de caída — {hAct}</Lbl>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: "#ef4444", display: "block", marginBottom: 4 }}>Pend. picar (acumulado)</label><NF value={dlP} onCommit={setDlP} /></div>
+                <div><label style={{ fontSize: 10, color: "#a78bfa", display: "block", marginBottom: 4 }}>Pend. RFID (acumulado)</label><NF value={dlR} onCommit={setDlR} /></div>
+              </div>
+              <div style={{ fontSize: 11, color: S.dim, marginBottom: 10, background: "rgba(51,65,85,0.3)", padding: 8, borderRadius: 8 }}>
+                Pend. clasificar se mantiene: <b style={{ color: "#f59e0b" }}>{pC.toLocaleString()}</b>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={addDropLog} style={{ flex: 1, padding: 12, borderRadius: 8, border: "none", background: "#f59e0b", color: "#000", fontWeight: 700, cursor: "pointer" }}>Guardar</button>
+                <button onClick={() => setShowDL(false)} style={{ flex: 1, padding: 12, borderRadius: 8, border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
+              </div>
+            </Card>
+          )}
+
+          {hourLogs.length > 0 && (
+            <Card>
+              <Lbl>Registro por horas</Lbl>
+              {hourLogs.map((l, i) => {
+                const dP = l.picadas - l.expectedPic, dC = l.clasificadas - l.expectedClas;
+                return (
+                  <div key={l.id} style={{ padding: "8px 0", borderBottom: i < hourLogs.length - 1 ? `1px solid ${S.cardBorder}` : "none" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: S.text }}>{l.hora}</span>
+                        <Pill color="#14b8a6">TPH {l.tph}</Pill>
+                        {l.avgPic !== undefined && <Pill color="#3b82f6">{l.avgPic}/pic</Pill>}
+                        {l.avgCla !== undefined && <Pill color="#f59e0b">{l.avgCla}/cla</Pill>}
+                      </div>
+                      <button onClick={() => setHourLogs(p => p.filter(x => x.id !== l.id))} style={{ background: "none", border: "none", color: S.dim, fontSize: 14, cursor: "pointer" }}>🗑</button>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6, fontSize: 11 }}>
+                      <div>
+                        <span style={{ color: S.dim }}>Pic: </span>
+                        <span style={{ fontWeight: 700, fontFamily: S.mono, color: "#3b82f6" }}>{l.picadas.toLocaleString()}</span>
+                        <span style={{ fontSize: 9, color: dP >= 0 ? "#10b981" : "#ef4444", marginLeft: 3 }}>{dP >= 0 ? "+" : ""}{dP.toLocaleString()}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: S.dim }}>Cla: </span>
+                        <span style={{ fontWeight: 700, fontFamily: S.mono, color: "#f59e0b" }}>{l.clasificadas.toLocaleString()}</span>
+                        <span style={{ fontSize: 9, color: dC >= 0 ? "#10b981" : "#ef4444", marginLeft: 3 }}>{dC >= 0 ? "+" : ""}{dC.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ paddingTop: 8, borderTop: `1px solid ${S.cardBorder}`, marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700 }}>
+                <span style={{ color: S.sub }}>Acum. {hourLogs.length}h</span>
+                <span style={{ fontFamily: S.mono }}>
+                  <span style={{ color: "#3b82f6" }}>{totPicR.toLocaleString()}</span>
+                  <span style={{ color: S.dim }}> · </span>
+                  <span style={{ color: "#f59e0b" }}>{totClaR.toLocaleString()}</span>
+                  <span style={{ color: S.dim }}> · TPH </span>
+                  <span style={{ color: "#14b8a6" }}>{tphAcum}</span>
+                </span>
+              </div>
+            </Card>
+          )}
+
+          {dropLogs.length > 0 && (
+            <Card>
+              <Lbl>Actualizaciones de caída</Lbl>
+              {dropLogs.map((d, i) => {
+                const prev = i > 0 ? dropLogs[i - 1] : null;
+                const dp = prev ? d.picar - prev.picar : 0;
+                return (
+                  <div key={d.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: i < dropLogs.length - 1 ? `1px solid ${S.cardBorder}` : "none" }}>
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: S.text }}>{d.hora}</span>
+                      <div style={{ fontSize: 11, fontFamily: S.mono, marginTop: 2, display: "flex", gap: 6 }}>
+                        <span style={{ color: "#ef4444" }}>{d.picar.toLocaleString()}{prev && <span style={{ fontSize: 9, color: dp > 0 ? "#ef4444" : "#10b981", marginLeft: 2 }}>{dp > 0 ? "+" : ""}{dp.toLocaleString()}</span>}</span>
+                        <span style={{ color: "#f59e0b" }}>{d.clasif.toLocaleString()}</span>
+                        <span style={{ color: "#a78bfa" }}>{d.rfid.toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <button onClick={() => setDropLogs(p => p.filter(x => x.id !== d.id))} style={{ background: "none", border: "none", color: S.dim, fontSize: 14, cursor: "pointer" }}>🗑</button>
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+        </>)}
+
+        {/* ═══ RUTAS PT ═══ */}
+        {tab === "rutas" && (<>
+          {/* Photo upload */}
+          <Card>
+            <Lbl>Cargar rutas del día</Lbl>
+            <p style={{ fontSize: 11, color: S.dim, marginBottom: 10 }}>Haz una foto a la hoja de rutas o súbela desde galería.</p>
+            <input ref={routeCamRef} type="file" accept="image/*" capture="environment" onChange={e => { handleRouteImg(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
+            <input ref={routeGalRef} type="file" accept="image/*" onChange={e => { handleRouteImg(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => routeCamRef.current?.click()} disabled={routeImgLoading} style={{ flex: 1, padding: 12, borderRadius: 10, border: "2px dashed rgba(59,130,246,0.3)", background: "rgba(59,130,246,0.05)", color: "#3b82f6", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📷 Cámara</button>
+              <button onClick={() => routeGalRef.current?.click()} disabled={routeImgLoading} style={{ flex: 1, padding: 12, borderRadius: 10, border: "2px dashed rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.05)", color: "#a78bfa", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🖼 Galería</button>
+            </div>
+            {routeImgLoading && <div style={{ marginTop: 10, padding: 10, background: "rgba(59,130,246,0.1)", borderRadius: 8, fontSize: 12, color: "#93c5fd", textAlign: "center" }}>⏳ Leyendo rutas de la imagen...</div>}
+            {routeImgError && <div style={{ marginTop: 10, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8, fontSize: 12, color: "#fca5a5" }}>{routeImgError}</div>}
+          </Card>
+
+          {/* Routes list */}
+          {routes.length > 0 && (
+            <Card>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <Lbl>Rutas del día</Lbl>
+                <div style={{ fontSize: 11, color: S.dim }}>
+                  <span style={{ color: "#10b981", fontWeight: 700 }}>{routes.filter(r => r.status !== "cancelled" && ["cutoff", "fme", "cuadre", "salida"].every(f => (r.checks || {})[f] === CHECK_DONE || (r.checks || {})[f] === true)).length}</span>
+                  <span> / {routes.filter(r => r.status !== "cancelled").length}</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 12, background: "rgba(51,65,85,0.3)" }}>
+                <div style={{ width: `${routes.filter(r => r.status !== "cancelled").length > 0 ? (routes.filter(r => r.status !== "cancelled" && ["cutoff", "fme", "cuadre", "salida"].every(f => (r.checks || {})[f] === CHECK_DONE || (r.checks || {})[f] === true)).length / routes.filter(r => r.status !== "cancelled").length) * 100 : 0}%`, background: "#10b981", transition: "width 0.3s" }} />
+              </div>
+              <div style={{ display: "flex", gap: 8, fontSize: 10, color: S.dim }}>
+                <span><b style={{ color: "#fbbf24" }}>Amarillo</b> en curso</span>
+                <span><b style={{ color: "#6ee7b7" }}>Verde</b> listo</span>
+                <span><b style={{ color: "#ef4444" }}>Rojo</b> urgente/vencido</span>
+              </div>
+            </Card>
+          )}
+
+          {routes.map((r, i) => {
+            const isCancelled = r.status === "cancelled";
+            const checks = r.checks || {};
+            const isDone = (field) => checks[field] === CHECK_DONE || checks[field] === true;
+            const isProgress = (field) => checks[field] === CHECK_PROGRESS;
+            const allDone = isDone("cutoff") && isDone("fme") && isDone("cuadre") && isDone("salida");
+            const cutM = r.cutoff && r.cutoff.includes(":") ? toM(r.cutoff.padStart(5, "0")) : 0;
+            const isUrgent = !isDone("cutoff") && !isProgress("cutoff") && !isCancelled && cutM > 0 && cutM - nowM < 60;
+            const toggleCheck = (field) => {
+              setRoutes(p => p.map(x => {
+                if (x.id !== r.id) return x;
+                const current = (x.checks || {})[field];
+                const next = current === CHECK_PROGRESS ? CHECK_DONE : current === CHECK_DONE || current === true ? undefined : CHECK_PROGRESS;
+                const nextChecks = { ...(x.checks || {}) };
+                if (next) nextChecks[field] = next;
+                else delete nextChecks[field];
+                return { ...x, checks: nextChecks };
+              }));
+            };
+            const cellStyle = (field) => ({
+              padding: "6px 4px", textAlign: "center", fontSize: 11, fontFamily: S.mono, fontWeight: 700, cursor: "pointer", borderRadius: 6, transition: "all 0.15s",
+              background: isDone(field) ? "rgba(16,185,129,0.2)" : isProgress(field) ? "rgba(245,158,11,0.18)" : "transparent",
+              border: `1px solid ${isDone(field) ? "rgba(16,185,129,0.28)" : isProgress(field) ? "rgba(245,158,11,0.3)" : "transparent"}`,
+              color: isDone(field) ? "#6ee7b7" : isProgress(field) ? "#fbbf24" : isCancelled ? S.dim : S.sub,
+              textDecoration: isCancelled ? "line-through" : "none",
+            });
+            return (
+              <div key={r.id} style={{
+                background: allDone ? "rgba(16,185,129,0.06)" : isCancelled ? "rgba(51,65,85,0.15)" : isUrgent ? "rgba(239,68,68,0.06)" : S.card,
+                borderRadius: 10, marginBottom: 4, border: `1px solid ${allDone ? "rgba(16,185,129,0.2)" : isUrgent ? "rgba(239,68,68,0.25)" : S.cardBorder}`,
+                padding: "8px 10px", opacity: isCancelled ? 0.4 : 1,
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: allDone ? "#6ee7b7" : isUrgent ? "#ef4444" : S.text, textDecoration: isCancelled ? "line-through" : allDone ? "line-through" : "none" }}>{r.dest}</span>
+                    {isUrgent && <span style={{ fontSize: 8, color: "#ef4444", fontWeight: 800, background: "rgba(239,68,68,0.15)", padding: "2px 6px", borderRadius: 4 }}>URGENTE</span>}
+                    {allDone && <span style={{ fontSize: 8, color: "#6ee7b7", fontWeight: 800 }}>✓</span>}
+                  </div>
+                  <button onClick={() => setRoutes(p => p.map(x => x.id === r.id ? { ...x, status: x.status === "cancelled" ? "pending" : "cancelled", checks: {} } : x))} style={{ background: "none", border: "none", color: S.dim, fontSize: 12, cursor: "pointer" }}>✕</button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+                  <div onClick={() => toggleCheck("cutoff")} style={cellStyle("cutoff")}>
+                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>CUT OFF</div>
+                    {r.cutoff || "—"}
+                  </div>
+                  <div onClick={() => toggleCheck("fme")} style={cellStyle("fme")}>
+                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>FME</div>
+                    {r.fme || "—"}
+                  </div>
+                  <div onClick={() => toggleCheck("cuadre")} style={cellStyle("cuadre")}>
+                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>CUADRE</div>
+                    {r.cuadre || "—"}
+                  </div>
+                  <div onClick={() => toggleCheck("salida")} style={cellStyle("salida")}>
+                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>SALIDA</div>
+                    {r.salida || "—"}
+                  </div>
+                </div>
+                {r.comment && <div style={{ fontSize: 10, color: "#fbbf24", marginTop: 4 }}>{r.comment}</div>}
+              </div>
+            );
+          })}
+
+          {!showAddRoute ? (
+            <button onClick={() => setShowAddRoute(true)} style={{ width: "100%", padding: 10, borderRadius: 10, border: `2px dashed ${S.cardBorder}`, background: "transparent", color: S.dim, fontSize: 12, fontWeight: 700, cursor: "pointer", marginTop: 6 }}>+ Añadir ruta</button>
+          ) : (
+            <Card sx={{ marginTop: 6 }}>
+              <Lbl>Nueva ruta</Lbl>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cut Off</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRCut} onChange={e => setNRCut(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Destino</label><TF value={nRDest} onChange={setNRDest} placeholder="Destino" /></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>FME</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRFme} onChange={e => setNRFme(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Cuadre</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRCua} onChange={e => setNRCua(e.target.value)} style={inp} /></div>
+                <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Salida</label><input type="text" placeholder="HH:MM" inputMode="numeric" value={nRSal} onChange={e => setNRSal(e.target.value)} style={inp} /></div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => { if (nRDest.trim() && nRCut) { setRoutes(p => [...p, { id: Date.now(), cutoff: nRCut, dest: nRDest.trim(), fme: nRFme, cuadre: nRCua, salida: nRSal, status: "pending", comment: "" }].sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0")))); setNRCut(""); setNRDest(""); setNRFme(""); setNRCua(""); setNRSal(""); setShowAddRoute(false); } }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Añadir</button>
+                <button onClick={() => setShowAddRoute(false)} style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
+              </div>
+            </Card>
+          )}
+
+          {routes.length > 0 && (
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button onClick={() => { if (window.confirm("¿Resetear todas las rutas a pendiente?")) setRoutes(p => p.map(r => ({ ...r, status: "pending", checks: {} }))); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: "rgba(51,65,85,0.3)", color: S.dim, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🔄 Resetear</button>
+              <button onClick={() => { if (window.confirm("¿Borrar todas las rutas?")) setRoutes([]); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: "rgba(239,68,68,0.1)", color: "#fca5a5", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🗑 Borrar todas</button>
+            </div>
+          )}
+
+          {routes.length === 0 && !routeImgLoading && (
+            <Card sx={{ textAlign: "center", padding: "30px 20px" }}>
+              <div style={{ fontSize: 28, marginBottom: 8, opacity: 0.6 }}>🚚</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: S.sub }}>Sin rutas cargadas</div>
+              <div style={{ fontSize: 12, color: S.dim, marginTop: 4 }}>Haz una foto a la hoja de rutas del día o añádelas manualmente</div>
+            </Card>
+          )}
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+export default App;
