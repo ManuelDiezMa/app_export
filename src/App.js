@@ -7,6 +7,18 @@ function usePersist(k, fb) {
   const set = useCallback((fn) => { sV(p => { const n = typeof fn === "function" ? fn(p) : fn; try { localStorage.setItem("exp_" + k, JSON.stringify(n)); } catch {} return n; }); }, [k]);
   return [v, set];
 }
+function useMedia(q) {
+  const get = () => typeof window !== "undefined" && window.matchMedia(q).matches;
+  const [m, setM] = useState(get);
+  useEffect(() => {
+    const mq = window.matchMedia(q);
+    const on = () => setM(mq.matches);
+    on();
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, [q]);
+  return m;
+}
 
 /* ═══ DEFAULTS ═══ */
 const DEF_ZONES = [
@@ -154,6 +166,8 @@ function timeLabel(diff) {
 
 /* ═══ APP ═══ */
 function App() {
+  const wide = useMedia("(min-width: 900px)");
+  const desktop = useMedia("(min-width: 1120px)");
   const [zones, setZones] = usePersist("zones2", DEF_ZONES);
   const [roles, setRoles] = usePersist("roles2", DEF_ROLES);
   const [staff, setStaff] = usePersist("staff2", {});
@@ -379,11 +393,11 @@ function App() {
   const gcol = (z) => ZC[z.ci % ZC.length];
 
   return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(180deg, ${S.bg} 0%, #111827 48%, #0b1120 100%)`, fontFamily: S.sans, color: S.text, maxWidth: 520, margin: "0 auto", boxShadow: "0 0 80px rgba(0,0,0,0.28)" }}>
+    <div style={{ minHeight: "100vh", background: `linear-gradient(180deg, ${S.bg} 0%, #111827 48%, #0b1120 100%)`, fontFamily: S.sans, color: S.text, maxWidth: desktop ? 1220 : wide ? 980 : 520, margin: "0 auto", boxShadow: wide ? "0 0 110px rgba(0,0,0,0.32)" : "0 0 80px rgba(0,0,0,0.28)" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700;9..40,800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet" />
 
       {/* HEADER */}
-      <div style={{ padding: "18px 20px 14px", background: "rgba(11,17,32,0.94)", backdropFilter: "blur(20px)", borderBottom: "1px solid rgba(148,163,184,0.14)", position: "sticky", top: 0, zIndex: 100, display: "flex", justifyContent: "space-between", alignItems: "flex-end", boxShadow: "0 10px 28px rgba(0,0,0,0.24)" }}>
+      <div style={{ padding: wide ? "18px 28px 14px" : "18px 20px 14px", background: "rgba(11,17,32,0.94)", backdropFilter: "blur(20px)", borderBottom: "1px solid rgba(148,163,184,0.14)", position: "sticky", top: 0, zIndex: 100, display: "flex", justifyContent: "space-between", alignItems: "flex-end", boxShadow: "0 10px 28px rgba(0,0,0,0.24)" }}>
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 3, color: "#3b82f6" }}>CONTROL DE PERSONAL</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 4 }}>
@@ -400,7 +414,7 @@ function App() {
 
       {/* CONFIG */}
       {showCfg && (
-        <div style={{ padding: "12px 20px 16px", background: "rgba(17,24,39,0.92)", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>
+        <div style={{ padding: wide ? "14px 28px 18px" : "12px 20px 16px", background: "rgba(17,24,39,0.92)", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>
           <Lbl>Productividad (uds/h)</Lbl>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
             <div><label style={{ fontSize: 11, color: "#3b82f6", marginBottom: 4, display: "block", fontWeight: 700 }}>Media PT AGV / trabajador</label><NF value={objAGV} onCommit={setObjAGV} /></div>
@@ -435,18 +449,20 @@ function App() {
       )}
 
       {/* TABS */}
-      <div style={{ display: "flex", gap: 4, padding: "8px 10px", background: "rgba(11,17,32,0.76)", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>
+      <div style={{ display: "flex", gap: 4, padding: wide ? "8px 28px" : "8px 10px", background: "rgba(11,17,32,0.76)", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>
         {[["dashboard", "Dashboard"], ["turno", "Turno"], ["situacion", "Situación"], ["rutas", "Rutas PT"]].map(([id, l]) => (
           <button key={id} onClick={() => setTab(id)} style={{ padding: "10px 6px", border: `1px solid ${tab === id ? "rgba(59,130,246,0.35)" : "transparent"}`, borderRadius: 8, background: tab === id ? "rgba(59,130,246,0.14)" : "transparent", color: tab === id ? "#93c5fd" : S.dim, fontSize: 12, fontWeight: 800, cursor: "pointer", flex: 1, textAlign: "center" }}>{l}</button>
         ))}
       </div>
 
-      <div style={{ padding: "16px 20px 100px" }}>
+      <div style={{ padding: wide ? "18px 28px 100px" : "16px 20px 100px" }}>
 
         {/* ═══ DASHBOARD ═══ */}
         {tab === "dashboard" && (<>
+          <div style={{ display: wide ? "grid" : "block", gridTemplateColumns: desktop ? "1.05fr 0.95fr" : "1fr 1fr", gap: wide ? 14 : 0, alignItems: "start" }}>
+            <div>
           {/* KPIs */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: wide ? 10 : 6, marginBottom: 14 }}>
             {[{ l: "Por Picar", v: pP, c: "#ef4444" }, { l: "Por Clasif.", v: pC, c: "#f59e0b" }, { l: "Pdt RFID", v: pR, c: "#a78bfa" }, { l: "Personas", v: asig, c: "#3b82f6" }].map(k => (
               <div key={k.l} style={{ background: S.card, borderRadius: 12, padding: "10px 4px", textAlign: "center", border: `1px solid ${S.cardBorder}` }}>
                 <div style={{ fontSize: 8, color: S.dim, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{k.l}</div>
@@ -534,6 +550,8 @@ function App() {
                 : clTot > 0 && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: "rgba(16,185,129,0.1)", color: "#6ee7b7" }}>✓ Clasificación absorbe</div>}
             </Card>
           )}
+            </div>
+            <div>
 
           {/* Productivity averages */}
           {(tDir + tInd) > 0 && (
@@ -620,6 +638,8 @@ function App() {
               </div>
             </Card>
           )}
+            </div>
+          </div>
 
           {/* Distribution */}
           {asig > 0 && (
@@ -645,6 +665,8 @@ function App() {
 
         {/* ═══ TURNO ═══ */}
         {tab === "turno" && (<>
+          <div style={{ display: wide ? "grid" : "block", gridTemplateColumns: desktop ? "360px 1fr" : "320px 1fr", gap: wide ? 14 : 0, alignItems: "start" }}>
+            <div>
           <Card>
             <Lbl>¿Qué tienes?</Lbl>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
@@ -677,6 +699,8 @@ function App() {
               </div>
             </Card>
           )}
+            </div>
+            <div style={{ display: wide ? "grid" : "block", gridTemplateColumns: desktop ? "1fr 1fr" : "1fr", gap: wide ? 10 : 0, alignItems: "start" }}>
 
           {/* Zones */}
           {zones.map((zone, zi) => {
@@ -747,10 +771,14 @@ function App() {
               </div>
             </Card>
           )}
+            </div>
+          </div>
         </>)}
 
         {/* ═══ SITUACIÓN ═══ */}
         {tab === "situacion" && (<>
+          <div style={{ display: wide ? "grid" : "block", gridTemplateColumns: desktop ? "360px 1fr" : "320px 1fr", gap: wide ? 14 : 0, alignItems: "start" }}>
+            <div>
           <Card>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <Lbl>Estado — {hAct}</Lbl>
@@ -808,6 +836,8 @@ function App() {
               </div>
             </Card>
           )}
+            </div>
+            <div>
 
           {hourLogs.length > 0 && (
             <Card>
@@ -875,10 +905,14 @@ function App() {
               })}
             </Card>
           )}
+            </div>
+          </div>
         </>)}
 
         {/* ═══ RUTAS PT ═══ */}
         {tab === "rutas" && (<>
+          <div style={{ display: wide ? "grid" : "block", gridTemplateColumns: desktop ? "360px 1fr" : "320px 1fr", gap: wide ? 14 : 0, alignItems: "start" }}>
+            <div>
           {/* Photo upload */}
           <Card>
             <Lbl>Cargar rutas del día</Lbl>
@@ -927,7 +961,10 @@ function App() {
               </div>
             </Card>
           )}
+            </div>
+            <div>
 
+          <div style={{ display: desktop ? "grid" : "block", gridTemplateColumns: "1fr 1fr", gap: desktop ? 10 : 0, alignItems: "start" }}>
           {routeVisible.map(({ r, diff }, i) => {
             const isCancelled = r.status === "cancelled";
             const checks = r.checks || {};
@@ -1016,6 +1053,7 @@ function App() {
               </div>
             );
           })}
+          </div>
 
           {routes.length > 0 && routeVisible.length === 0 && (
             <Card sx={{ textAlign: "center", padding: "18px 16px" }}>
@@ -1059,6 +1097,8 @@ function App() {
               <div style={{ fontSize: 12, color: S.dim, marginTop: 4 }}>Haz una foto a la hoja de rutas del día o añádelas manualmente</div>
             </Card>
           )}
+            </div>
+          </div>
         </>)}
       </div>
     </div>
