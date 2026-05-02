@@ -137,6 +137,20 @@ function Card({ children, sx }) { return <div style={{ background: S.card, backd
 function Lbl({ children }) { return <div style={{ fontSize: 10, fontWeight: 700, color: S.dim, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8 }}>{children}</div>; }
 function Pill({ color, children }) { return <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: color + "22", color }}>{children}</span>; }
 function toM(t) { const p = t.split(":").map(Number); return p[0] * 60 + (p[1] || 0); }
+function isRouteDone(r) {
+  const c = r.checks || {};
+  return ["cutoff", "fme", "cuadre", "salida"].every(f => c[f] === CHECK_DONE || c[f] === true);
+}
+function routeHasProgress(r) {
+  const c = r.checks || {};
+  return ["cutoff", "fme", "cuadre", "salida"].some(f => c[f] === CHECK_PROGRESS);
+}
+function timeLabel(diff) {
+  if (diff < 0) return `${Math.abs(diff)}m vencida`;
+  if (diff === 0) return "ahora";
+  if (diff < 60) return `${diff}m`;
+  return `${Math.floor(diff / 60)}h ${diff % 60}m`;
+}
 
 /* ═══ APP ═══ */
 function App() {
@@ -174,6 +188,10 @@ function App() {
   const [routes, setRoutes] = usePersist("routes", []);
   const [showAddRoute, setShowAddRoute] = useState(false);
   const [nRCut, setNRCut] = useState(""); const [nRDest, setNRDest] = useState(""); const [nRFme, setNRFme] = useState(""); const [nRCua, setNRCua] = useState(""); const [nRSal, setNRSal] = useState("");
+  const [routeFilter, setRouteFilter] = useState("focus");
+  const [editRouteId, setEditRouteId] = useState(null);
+  const [eRCut, setERCut] = useState(""); const [eRDest, setERDest] = useState(""); const [eRFme, setERFme] = useState(""); const [eRCua, setERCua] = useState(""); const [eRSal, setERSal] = useState(""); const [eRCom, setERCom] = useState("");
+  const [projectionMode, setProjectionMode] = useState("mix");
   const [routeImgLoading, setRouteImgLoading] = useState(false);
   const [routeImgError, setRouteImgError] = useState(null);
   const routeCamRef = useRef(null);
@@ -278,12 +296,44 @@ function App() {
 
   const expectedPH = salT;
   const expectedCH = capH;
-  const picarFin = hRest > 0 && salT > 0 ? Math.max(0, pP - salT * hRest) : pP;
-  const clasifFin = hRest > 0 && capH > 0 ? Math.max(0, (pC + Math.min(pP, salT * hRest)) - capH * hRest) : pC;
-  const rfidFin = hRest > 0 && salT > 0 ? Math.max(0, pR - salT * hRest) : pR;
+  const realPH = hourLogs.length > 0 ? Math.round(totPicR / hourLogs.length) : 0;
+  const realCH = hourLogs.length > 0 ? Math.round(totClaR / hourLogs.length) : 0;
+  const mixPH = realPH > 0 ? Math.round((expectedPH + realPH) / 2) : expectedPH;
+  const mixCH = realCH > 0 ? Math.round((expectedCH + realCH) / 2) : expectedCH;
+  const activePH = projectionMode === "real" ? realPH : projectionMode === "mix" ? mixPH : expectedPH;
+  const activeCH = projectionMode === "real" ? realCH : projectionMode === "mix" ? mixCH : expectedCH;
+  const picarFin = hRest > 0 && activePH > 0 ? Math.max(0, pP - activePH * hRest) : pP;
+  const clasifFin = hRest > 0 && activeCH > 0 ? Math.max(0, (pC + Math.min(pP, activePH * hRest)) - activeCH * hRest) : pC;
+  const rfidFin = hRest > 0 && activePH > 0 ? Math.max(0, pR - activePH * hRest) : pR;
   const actDrops = [...drops].sort((a, b) => toM(a.time) - toM(b.time));
   const nextDr = actDrops.find(d => toM(d.time) > nowM);
   const mToDr = nextDr ? toM(nextDr.time) - nowM : null;
+  const routesMeta = routes.map(r => {
+    const cutM = r.cutoff && r.cutoff.includes(":") ? toM(r.cutoff.padStart(5, "0")) : 9999;
+    const diff = cutM - nowM;
+    const done = isRouteDone(r);
+    const progress = routeHasProgress(r);
+    const cancelled = r.status === "cancelled";
+    const urgent = !cancelled && !done && !progress && cutM !== 9999 && diff < 60;
+    const overdue = urgent && diff < 0;
+    const state = cancelled ? "cancelled" : done ? "done" : urgent ? "urgent" : progress ? "progress" : "open";
+    const rank = cancelled ? 5 : done ? 4 : overdue ? 0 : urgent ? 1 : progress ? 2 : 3;
+    return { r, cutM, diff, done, progress, cancelled, urgent, overdue, state, rank };
+  }).sort((a, b) => a.rank - b.rank || a.cutM - b.cutM);
+  const routeVisible = routesMeta.filter(m => routeFilter === "all" || (routeFilter === "focus" && !m.done && !m.cancelled) || routeFilter === m.state);
+  const activeRoutes = routesMeta.filter(m => !m.cancelled);
+  const routeDoneCount = activeRoutes.filter(m => m.done).length;
+  const routeUrgentCount = routesMeta.filter(m => m.urgent).length;
+  const routeProgressCount = routesMeta.filter(m => m.progress && !m.done && !m.cancelled).length;
+  const nextRoute = routesMeta.find(m => !m.cancelled && !m.done);
+  const recommendations = [
+    sinA > 0 ? { c: "#f59e0b", t: "Asignar personal libre", d: `${sinA} persona${sinA === 1 ? "" : "s"} sin destino operativo.` } : null,
+    sinA < 0 ? { c: "#ef4444", t: "Revisar reparto", d: `Hay ${Math.abs(sinA)} persona${Math.abs(sinA) === 1 ? "" : "s"} más asignadas que el total.` } : null,
+    pAGV > 0 && rAGV < rNeed ? { c: "#ef4444", t: "Faltan runners para AGV", d: `Runner AGV ${rAGV}/${rNeed}. Mueve ${rNeed - rAGV} si quieres mantener el ritmo.` } : null,
+    capH > 0 && salT > 0 && capH < salT + pC ? { c: "#ef4444", t: "Clasificación será cuello de botella", d: `Faltan ${(salT + pC - capH).toLocaleString()} uds/h de capacidad.` } : null,
+    hRest > 0 && picarFin > 0 ? { c: "#f59e0b", t: "Riesgo fin de turno", d: `A este ritmo quedarían ${Math.round(picarFin).toLocaleString()} uds por picar.` } : null,
+    routeUrgentCount > 0 ? { c: "#ef4444", t: "Rutas PT en rojo", d: `${routeUrgentCount} ruta${routeUrgentCount === 1 ? "" : "s"} vencida o a menos de 1h.` } : null,
+  ].filter(Boolean);
 
   const moveZone = (i, d) => { setZones(p => { const n = [...p]; const ni = i + d; if (ni < 0 || ni >= n.length) return p; [n[i], n[ni]] = [n[ni], n[i]]; return n; }); };
   const addHourLog = () => {
@@ -306,6 +356,24 @@ function App() {
     if (!window.confirm("¿Nuevo turno? Se borran datos operativos.")) return;
     setPP(0); setPC(0); setPR(0); setTG(0); setStaff({}); setHourLogs([]); setDropLogs([]);
     setRoutes(p => p.map(r => ({ ...r, status: "pending", checks: {} })));
+  };
+  const startEditRoute = (r) => {
+    setEditRouteId(r.id);
+    setERCut(r.cutoff || ""); setERDest(r.dest || ""); setERFme(r.fme || ""); setERCua(r.cuadre || ""); setERSal(r.salida || ""); setERCom(r.comment || "");
+  };
+  const saveEditRoute = () => {
+    const cutoff = normalizeTime(eRCut);
+    if (!editRouteId || !eRDest.trim() || !cutoff) return;
+    setRoutes(p => p.map(r => r.id === editRouteId ? {
+      ...r,
+      cutoff,
+      dest: eRDest.trim(),
+      fme: normalizeTime(eRFme),
+      cuadre: normalizeTime(eRCua),
+      salida: normalizeTime(eRSal),
+      comment: eRCom,
+    } : r).sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0"))));
+    setEditRouteId(null);
   };
 
   const gcol = (z) => ZC[z.ci % ZC.length];
@@ -386,6 +454,32 @@ function App() {
               </div>
             ))}
           </div>
+
+          {(recommendations.length > 0 || asig > 0 || routes.length > 0) && (
+            <Card sx={{ borderLeft: `4px solid ${recommendations.some(a => a.c === "#ef4444") ? "#ef4444" : recommendations.length > 0 ? "#f59e0b" : "#10b981"}` }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <Lbl>Centro de mando</Lbl>
+                <Pill color={recommendations.length > 0 ? "#f59e0b" : "#10b981"}>{recommendations.length > 0 ? `${recommendations.length} aviso${recommendations.length === 1 ? "" : "s"}` : "Estable"}</Pill>
+              </div>
+              {recommendations.length > 0 ? recommendations.slice(0, 4).map((a, idx) => (
+                <div key={idx} style={{ display: "flex", gap: 10, padding: "8px 0", borderTop: idx > 0 ? `1px solid ${S.cardBorder}` : "none" }}>
+                  <div style={{ width: 8, height: 8, borderRadius: 4, background: a.c, marginTop: 5, boxShadow: `0 0 0 4px ${a.c}18` }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: S.text }}>{a.t}</div>
+                    <div style={{ fontSize: 11, color: S.dim, marginTop: 2 }}>{a.d}</div>
+                  </div>
+                </div>
+              )) : (
+                <div style={{ fontSize: 12, color: S.sub }}>Sin riesgos claros con los datos actuales. Vigila las próximas rutas y el primer registro real de productividad.</div>
+              )}
+              {nextRoute && (
+                <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: nextRoute.urgent ? "rgba(239,68,68,0.12)" : "rgba(59,130,246,0.1)", display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontSize: 11, color: S.sub, fontWeight: 700 }}>Próxima ruta: {nextRoute.r.dest}</span>
+                  <span style={{ fontSize: 11, color: nextRoute.urgent ? "#fca5a5" : "#93c5fd", fontWeight: 800, fontFamily: S.mono }}>{timeLabel(nextRoute.diff)}</span>
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* Staff table */}
           {asig > 0 && (
@@ -498,7 +592,24 @@ function App() {
           {/* Projection */}
           {salT > 0 && (pP > 0 || pC > 0) && hRest > 0 && (
             <Card sx={{ borderLeft: "3px solid #3b82f6" }}>
-              <Lbl>Proyección ~{finT}</Lbl>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <Lbl>Proyección ~{finT}</Lbl>
+                <div style={{ display: "flex", gap: 4, background: "rgba(15,23,42,0.6)", padding: 3, borderRadius: 8 }}>
+                  {[["plan", "Plan"], ["mix", "Mixto"], ["real", "Real"]].map(([id, l]) => (
+                    <button key={id} onClick={() => setProjectionMode(id)} style={{ border: "none", borderRadius: 6, padding: "4px 7px", background: projectionMode === id ? "rgba(59,130,246,0.22)" : "transparent", color: projectionMode === id ? "#93c5fd" : S.dim, fontSize: 10, fontWeight: 800, cursor: "pointer" }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+                <div style={{ background: "rgba(59,130,246,0.08)", borderRadius: 8, padding: "6px 8px", border: "1px solid rgba(59,130,246,0.16)" }}>
+                  <div style={{ fontSize: 8, color: S.dim, fontWeight: 800 }}>PICADO USADO</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#93c5fd", fontFamily: S.mono }}>{activePH.toLocaleString()} uds/h</div>
+                </div>
+                <div style={{ background: "rgba(16,185,129,0.08)", borderRadius: 8, padding: "6px 8px", border: "1px solid rgba(16,185,129,0.16)" }}>
+                  <div style={{ fontSize: 8, color: S.dim, fontWeight: 800 }}>CLASIF. USADA</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#6ee7b7", fontFamily: S.mono }}>{activeCH.toLocaleString()} uds/h</div>
+                </div>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
                 {[{ l: "Picar", v: picarFin, c: "#ef4444" }, { l: "Clasif.", v: clasifFin, c: "#f59e0b" }, { l: "RFID", v: rfidFin, c: "#a78bfa" }].map(k => (
                   <div key={k.l} style={{ background: k.v > 0 ? `${k.c}11` : "rgba(16,185,129,0.08)", borderRadius: 10, padding: "8px 4px", textAlign: "center", border: `1px solid ${k.v > 0 ? k.c + "33" : "rgba(16,185,129,0.2)"}` }}>
@@ -788,22 +899,36 @@ function App() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <Lbl>Rutas del día</Lbl>
                 <div style={{ fontSize: 11, color: S.dim }}>
-                  <span style={{ color: "#10b981", fontWeight: 700 }}>{routes.filter(r => r.status !== "cancelled" && ["cutoff", "fme", "cuadre", "salida"].every(f => (r.checks || {})[f] === CHECK_DONE || (r.checks || {})[f] === true)).length}</span>
-                  <span> / {routes.filter(r => r.status !== "cancelled").length}</span>
+                  <span style={{ color: "#10b981", fontWeight: 700 }}>{routeDoneCount}</span>
+                  <span> / {activeRoutes.length}</span>
                 </div>
               </div>
               <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 12, background: "rgba(51,65,85,0.3)" }}>
-                <div style={{ width: `${routes.filter(r => r.status !== "cancelled").length > 0 ? (routes.filter(r => r.status !== "cancelled" && ["cutoff", "fme", "cuadre", "salida"].every(f => (r.checks || {})[f] === CHECK_DONE || (r.checks || {})[f] === true)).length / routes.filter(r => r.status !== "cancelled").length) * 100 : 0}%`, background: "#10b981", transition: "width 0.3s" }} />
+                <div style={{ width: `${activeRoutes.length > 0 ? (routeDoneCount / activeRoutes.length) * 100 : 0}%`, background: "#10b981", transition: "width 0.3s" }} />
               </div>
-              <div style={{ display: "flex", gap: 8, fontSize: 10, color: S.dim }}>
-                <span><b style={{ color: "#fbbf24" }}>Amarillo</b> en curso</span>
-                <span><b style={{ color: "#6ee7b7" }}>Verde</b> listo</span>
-                <span><b style={{ color: "#ef4444" }}>Rojo</b> urgente/vencido</span>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
+                {[{ l: "Rojo", v: routeUrgentCount, c: "#ef4444" }, { l: "En curso", v: routeProgressCount, c: "#f59e0b" }, { l: "Listas", v: routeDoneCount, c: "#10b981" }].map(k => (
+                  <div key={k.l} style={{ background: `${k.c}10`, border: `1px solid ${k.c}24`, borderRadius: 8, padding: "7px 6px", textAlign: "center" }}>
+                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 800, textTransform: "uppercase" }}>{k.l}</div>
+                    <div style={{ color: k.c, fontFamily: S.mono, fontWeight: 800, fontSize: 16 }}>{k.v}</div>
+                  </div>
+                ))}
+              </div>
+              {nextRoute && (
+                <div style={{ background: nextRoute.urgent ? "rgba(239,68,68,0.1)" : "rgba(59,130,246,0.08)", border: `1px solid ${nextRoute.urgent ? "rgba(239,68,68,0.22)" : "rgba(59,130,246,0.16)"}`, borderRadius: 8, padding: "8px 10px", marginBottom: 10, display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontSize: 11, color: S.sub, fontWeight: 700 }}>Siguiente foco: {nextRoute.r.dest}</span>
+                  <span style={{ fontSize: 11, color: nextRoute.urgent ? "#fca5a5" : "#93c5fd", fontWeight: 800, fontFamily: S.mono }}>{timeLabel(nextRoute.diff)}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 4, overflowX: "auto" }}>
+                {[["focus", "Foco"], ["urgent", "Rojo"], ["progress", "Curso"], ["done", "Listas"], ["all", "Todas"]].map(([id, l]) => (
+                  <button key={id} onClick={() => setRouteFilter(id)} style={{ border: `1px solid ${routeFilter === id ? "rgba(59,130,246,0.32)" : S.cardBorder}`, borderRadius: 8, padding: "6px 8px", background: routeFilter === id ? "rgba(59,130,246,0.16)" : "rgba(15,23,42,0.35)", color: routeFilter === id ? "#93c5fd" : S.dim, fontSize: 10, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>{l}</button>
+                ))}
               </div>
             </Card>
           )}
 
-          {routes.map((r, i) => {
+          {routeVisible.map(({ r, diff }, i) => {
             const isCancelled = r.status === "cancelled";
             const checks = r.checks || {};
             const isDone = (field) => checks[field] === CHECK_DONE || checks[field] === true;
@@ -846,9 +971,30 @@ function App() {
                     {hasProgress && !isUrgent && !allDone && <span style={{ fontSize: 8, color: "#fbbf24", fontWeight: 800, background: "rgba(245,158,11,0.14)", padding: "2px 6px", borderRadius: 4 }}>EN CURSO</span>}
                     {allDone && <span style={{ fontSize: 8, color: "#6ee7b7", fontWeight: 800 }}>✓</span>}
                   </div>
-                  <button onClick={() => setRoutes(p => p.map(x => x.id === r.id ? { ...x, status: x.status === "cancelled" ? "pending" : "cancelled", checks: {} } : x))} style={{ background: "none", border: "none", color: S.dim, fontSize: 12, cursor: "pointer" }}>✕</button>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    {!isCancelled && !allDone && r.cutoff && <span style={{ fontSize: 10, fontFamily: S.mono, fontWeight: 800, color: isUrgent ? "#fca5a5" : "#93c5fd", background: isUrgent ? "rgba(239,68,68,0.14)" : "rgba(59,130,246,0.1)", borderRadius: 6, padding: "3px 6px" }}>{timeLabel(diff)}</span>}
+                    <button onClick={() => startEditRoute(r)} style={{ background: "rgba(148,163,184,0.08)", border: `1px solid ${S.cardBorder}`, color: S.sub, borderRadius: 6, fontSize: 10, fontWeight: 800, cursor: "pointer", padding: "4px 6px" }}>Editar</button>
+                    <button onClick={() => setRoutes(p => p.map(x => x.id === r.id ? { ...x, status: x.status === "cancelled" ? "pending" : "cancelled", checks: {} } : x))} style={{ background: "none", border: "none", color: S.dim, fontSize: 12, cursor: "pointer" }}>✕</button>
+                  </div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+                {editRouteId === r.id ? (
+                  <div style={{ background: "rgba(15,23,42,0.52)", border: `1px solid ${S.cardBorder}`, borderRadius: 10, padding: 10 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <div><label style={{ fontSize: 9, color: S.dim, display: "block", marginBottom: 3 }}>Cut Off</label><TimeF value={eRCut} onChange={setERCut} style={{ ...inp, fontSize: 13, padding: 8 }} /></div>
+                      <div><label style={{ fontSize: 9, color: S.dim, display: "block", marginBottom: 3 }}>Destino</label><TF value={eRDest} onChange={setERDest} placeholder="Destino" style={{ ...inp, fontSize: 13, padding: 8, fontFamily: S.sans }} /></div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+                      <div><label style={{ fontSize: 9, color: S.dim, display: "block", marginBottom: 3 }}>FME</label><TimeF value={eRFme} onChange={setERFme} style={{ ...inp, fontSize: 13, padding: 8 }} /></div>
+                      <div><label style={{ fontSize: 9, color: S.dim, display: "block", marginBottom: 3 }}>Cuadre</label><TimeF value={eRCua} onChange={setERCua} style={{ ...inp, fontSize: 13, padding: 8 }} /></div>
+                      <div><label style={{ fontSize: 9, color: S.dim, display: "block", marginBottom: 3 }}>Salida</label><TimeF value={eRSal} onChange={setERSal} style={{ ...inp, fontSize: 13, padding: 8 }} /></div>
+                    </div>
+                    <TF value={eRCom} onChange={setERCom} placeholder="Comentario" style={{ ...inp, fontSize: 13, padding: 8, fontFamily: S.sans, marginBottom: 8 }} />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={saveEditRoute} style={{ flex: 1, padding: 9, borderRadius: 8, border: "none", background: "#10b981", color: "#052e1a", fontWeight: 800, cursor: "pointer" }}>Guardar</button>
+                      <button onClick={() => setEditRouteId(null)} style={{ flex: 1, padding: 9, borderRadius: 8, border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, fontWeight: 800, cursor: "pointer" }}>Cancelar</button>
+                    </div>
+                  </div>
+                ) : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
                   <div onClick={() => toggleCheck("cutoff")} style={cellStyle("cutoff")}>
                     <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>CUT OFF</div>
                     {r.cutoff || "—"}
@@ -865,11 +1011,18 @@ function App() {
                     <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>SALIDA</div>
                     {r.salida || "—"}
                   </div>
-                </div>
+                </div>}
                 {r.comment && <div style={{ fontSize: 10, color: "#fbbf24", marginTop: 4 }}>{r.comment}</div>}
               </div>
             );
           })}
+
+          {routes.length > 0 && routeVisible.length === 0 && (
+            <Card sx={{ textAlign: "center", padding: "18px 16px" }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: S.sub }}>No hay rutas en este filtro</div>
+              <button onClick={() => setRouteFilter("focus")} style={{ marginTop: 8, border: `1px solid ${S.cardBorder}`, background: "rgba(59,130,246,0.12)", color: "#93c5fd", borderRadius: 8, padding: "7px 10px", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>Ver foco</button>
+            </Card>
+          )}
 
           {!showAddRoute ? (
             <button onClick={() => setShowAddRoute(true)} style={{ width: "100%", padding: 10, borderRadius: 10, border: `2px dashed ${S.cardBorder}`, background: "transparent", color: S.dim, fontSize: 12, fontWeight: 700, cursor: "pointer", marginTop: 6 }}>+ Añadir ruta</button>
