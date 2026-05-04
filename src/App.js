@@ -7,6 +7,22 @@ function usePersist(k, fb) {
   const set = useCallback((fn) => { sV(p => { const n = typeof fn === "function" ? fn(p) : fn; try { localStorage.setItem("exp_" + k, JSON.stringify(n)); } catch {} return n; }); }, [k]);
   return [v, set];
 }
+const SUPABASE_URL = "https://izqihthvpiblgftrthpk.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml6cWlodGh2cGlibGdmdHJ0aHBrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NzI0NDksImV4cCI6MjA5MzA0ODQ0OX0.QtHFCTrvwFNv8W7_OlRmKuTr9J7GWwFFWpA0UDUDa0o";
+const SUPABASE_STATE_ID = "export-panel-main";
+async function sbFetch(path, options = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  if (!res.ok) throw new Error(`Supabase ${res.status}`);
+  return res;
+}
 function useMedia(q) {
   const get = () => typeof window !== "undefined" && window.matchMedia(q).matches;
   const [m, setM] = useState(get);
@@ -32,6 +48,7 @@ const DEF_ZONES = [
   { id: "reasignacion", name: "Reasignación", ci: 7 },
   { id: "pt_manual", name: "PT Manual", ci: 0 },
   { id: "extra", name: "Extra", ci: 3 },
+  { id: "cedidos", name: "CEDIDOS", ci: 7 },
 ];
 const DEF_ROLES = [
   { id: "clasificacion_op", name: "Clasificación", z: "clasificacion", type: "indirecto", icon: "📋" },
@@ -44,6 +61,7 @@ const DEF_ROLES = [
   { id: "reasignacion_op", name: "Reasignación", z: "reasignacion", type: "indirecto", icon: "🔄" },
   { id: "pt_manual_op", name: "PT Manual", z: "pt_manual", type: "directo", icon: "📦" },
   { id: "extra_op", name: "Extra", z: "extra", type: "tarea_extra", icon: "➕" },
+  { id: "cedidos_op", name: "Cedidos", z: "cedidos", type: "tarea_extra", icon: "↗️" },
 ];
 
 const ZC = ["#3b82f6","#8b5cf6","#f59e0b","#10b981","#ef4444","#6366f1","#14b8a6","#f97316"];
@@ -51,6 +69,8 @@ const TC = { directo: "#3b82f6", indirecto: "#a78bfa", tarea_extra: "#fbbf24" };
 const TL = { directo: "DIR", indirecto: "IND", tarea_extra: "EXTRA" };
 const CHECK_PROGRESS = "progress";
 const CHECK_DONE = "done";
+const ROUTE_STEPS = ["cutoff", "fme", "cuadre", "awb", "flejado", "salida"];
+const ROUTE_LABELS = { cutoff: "CUT OFF", fme: "FME", cuadre: "CUADRE", awb: "AWB", flejado: "FLEJADO", salida: "SALIDA" };
 
 /* ═══ STYLES ═══ */
 const S = {
@@ -151,17 +171,44 @@ function Pill({ color, children }) { return <span style={{ padding: "2px 8px", b
 function toM(t) { const p = t.split(":").map(Number); return p[0] * 60 + (p[1] || 0); }
 function isRouteDone(r) {
   const c = r.checks || {};
-  return ["cutoff", "fme", "cuadre", "salida"].every(f => c[f] === CHECK_DONE || c[f] === true);
+  return ROUTE_STEPS.every(f => c[f] === CHECK_DONE || c[f] === true);
 }
 function routeHasProgress(r) {
   const c = r.checks || {};
-  return ["cutoff", "fme", "cuadre", "salida"].some(f => c[f] === CHECK_PROGRESS);
+  return ROUTE_STEPS.some(f => c[f] === CHECK_PROGRESS);
 }
 function timeLabel(diff) {
   if (diff < 0) return `${Math.abs(diff)}m vencida`;
   if (diff === 0) return "ahora";
   if (diff < 60) return `${diff}m`;
   return `${Math.floor(diff / 60)}h ${diff % 60}m`;
+}
+function parseRouteText(text) {
+  return text.split(/\n+/).map(line => line.trim()).filter(Boolean).map((line, i) => {
+    const rawTimes = line.match(/\b(?:\d{1,2}[:.]\d{2}|\d{3,4})\b/g) || [];
+    const times = rawTimes.map(normalizeTime).filter(Boolean);
+    if (times.length === 0 || /cut\s*off|destino|salida|cuadre/i.test(line) && times.length < 2) return null;
+    const parts = line.split(/\t|;|,/).map(p => p.trim()).filter(Boolean);
+    let dest = parts.find(p => /[a-záéíóúüñ]/i.test(p) && !/\b(?:\d{1,2}[:.]\d{2}|\d{3,4})\b/.test(p) && !/cut\s*off|fme|cuadre|salida|awb|flejado/i.test(p));
+    if (!dest) {
+      dest = line.replace(/\b(?:\d{1,2}[:.]\d{2}|\d{3,4})\b/g, " ")
+        .replace(/cut\s*off|destino|fme|cuadre|salida|camion|awb|flejado/ig, " ")
+        .replace(/[-_|]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+    const comment = /cancel/i.test(line) ? "CANCELADO" : "";
+    return {
+      id: Date.now() + i,
+      cutoff: times[0] || "",
+      dest: dest || `Ruta ${i + 1}`,
+      fme: times[1] || "",
+      cuadre: times[2] || "",
+      salida: times[3] || "",
+      status: comment ? "cancelled" : "pending",
+      comment,
+    };
+  }).filter(Boolean).sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0")));
 }
 
 /* ═══ APP ═══ */
@@ -201,6 +248,9 @@ function App() {
   const [dlP, setDlP] = useState(0); const [dlR, setDlR] = useState(0);
   const [routes, setRoutes] = usePersist("routes", []);
   const [showAddRoute, setShowAddRoute] = useState(false);
+  const [showPasteRoutes, setShowPasteRoutes] = useState(false);
+  const [pasteRoutesText, setPasteRoutesText] = useState("");
+  const [pasteRoutesError, setPasteRoutesError] = useState("");
   const [nRCut, setNRCut] = useState(""); const [nRDest, setNRDest] = useState(""); const [nRFme, setNRFme] = useState(""); const [nRCua, setNRCua] = useState(""); const [nRSal, setNRSal] = useState("");
   const [routeFilter, setRouteFilter] = useState("focus");
   const [editRouteId, setEditRouteId] = useState(null);
@@ -208,8 +258,114 @@ function App() {
   const [projectionMode, setProjectionMode] = useState("mix");
   const [routeImgLoading, setRouteImgLoading] = useState(false);
   const [routeImgError, setRouteImgError] = useState(null);
+  const [syncReady, setSyncReady] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("local");
+  const remoteStamp = useRef(null);
+  const applyingRemote = useRef(false);
   const routeCamRef = useRef(null);
   const routeGalRef = useRef(null);
+
+  useEffect(() => {
+    if (!zones.some(z => z.id === "cedidos")) setZones(p => [...p, { id: "cedidos", name: "CEDIDOS", ci: 7 }]);
+    if (!roles.some(r => r.id === "cedidos_op")) setRoles(p => [...p, { id: "cedidos_op", name: "Cedidos", z: "cedidos", type: "tarea_extra", icon: "↗️" }]);
+  }, [zones, roles, setZones, setRoles]);
+
+  const syncState = {
+    zones2: zones, roles2: roles, staff2: staff,
+    objAGV, objManual, ratioR, capCl, ratioClasifPicado, finT, horasTurno, drops,
+    pP2: pP, pC2: pC, pR2: pR, tG2: tG, hourLogs, dropLogs, routes,
+  };
+  const applyRemoteState = useCallback((state) => {
+    if (!state || typeof state !== "object") return;
+    applyingRemote.current = true;
+    if (state.zones2) setZones(state.zones2);
+    if (state.roles2) setRoles(state.roles2);
+    if (state.staff2) setStaff(state.staff2);
+    if (state.objAGV !== undefined) setObjAGV(state.objAGV);
+    if (state.objManual !== undefined) setObjManual(state.objManual);
+    if (state.ratioR !== undefined) setRatioR(state.ratioR);
+    if (state.capCl !== undefined) setCapCl(state.capCl);
+    if (state.ratioClasifPicado !== undefined) setRatioClasifPicado(state.ratioClasifPicado);
+    if (state.finT !== undefined) setFinT(state.finT);
+    if (state.horasTurno !== undefined) setHorasTurno(state.horasTurno);
+    if (state.drops) setDrops(state.drops);
+    if (state.pP2 !== undefined) setPP(state.pP2);
+    if (state.pC2 !== undefined) setPC(state.pC2);
+    if (state.pR2 !== undefined) setPR(state.pR2);
+    if (state.tG2 !== undefined) setTG(state.tG2);
+    if (state.hourLogs) setHourLogs(state.hourLogs);
+    if (state.dropLogs) setDropLogs(state.dropLogs);
+    if (state.routes) setRoutes(state.routes);
+    setTimeout(() => { applyingRemote.current = false; }, 0);
+  }, [setZones, setRoles, setStaff, setObjAGV, setObjManual, setRatioR, setCapCl, setRatioClasifPicado, setFinT, setHorasTurno, setDrops, setPP, setPC, setPR, setTG, setHourLogs, setDropLogs, setRoutes]);
+
+  useEffect(() => {
+    let alive = true;
+    const loadRemote = async () => {
+      try {
+        setSyncStatus("conectando");
+        const res = await sbFetch(`app_state?id=eq.${SUPABASE_STATE_ID}&select=state,updated_at`);
+        const rows = await res.json();
+        if (!alive) return;
+        if (rows[0]?.state) {
+          remoteStamp.current = rows[0].updated_at;
+          applyRemoteState(rows[0].state);
+        } else {
+          await sbFetch("app_state", {
+            method: "POST",
+            headers: { Prefer: "resolution=merge-duplicates" },
+            body: JSON.stringify({ id: SUPABASE_STATE_ID, state: syncState }),
+          });
+        }
+        setSyncReady(true); setSyncStatus("sincronizado");
+      } catch {
+        if (!alive) return;
+        setSyncReady(false); setSyncStatus("local");
+      }
+    };
+    loadRemote();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!syncReady || applyingRemote.current) return;
+    setSyncStatus("guardando");
+    const t = setTimeout(async () => {
+      try {
+        const res = await sbFetch("app_state", {
+          method: "POST",
+          headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+          body: JSON.stringify({ id: SUPABASE_STATE_ID, state: syncState }),
+        });
+        const rows = await res.json();
+        remoteStamp.current = rows[0]?.updated_at || remoteStamp.current;
+        setSyncStatus("sincronizado");
+      } catch {
+        setSyncStatus("local");
+      }
+    }, 650);
+    return () => clearTimeout(t);
+  }, [syncReady, zones, roles, staff, objAGV, objManual, ratioR, capCl, ratioClasifPicado, finT, horasTurno, drops, pP, pC, pR, tG, hourLogs, dropLogs, routes]);
+
+  useEffect(() => {
+    if (!syncReady) return;
+    const t = setInterval(async () => {
+      try {
+        const res = await sbFetch(`app_state?id=eq.${SUPABASE_STATE_ID}&select=state,updated_at`);
+        const rows = await res.json();
+        const row = rows[0];
+        if (row?.updated_at && row.updated_at !== remoteStamp.current) {
+          remoteStamp.current = row.updated_at;
+          applyRemoteState(row.state);
+          setSyncStatus("sincronizado");
+        }
+      } catch {
+        setSyncStatus("local");
+      }
+    }, 12000);
+    return () => clearInterval(t);
+  }, [syncReady, applyRemoteState]);
 
   // Route image handler - compress + send to Claude
   const handleRouteImg = async (file) => {
@@ -399,6 +555,15 @@ function App() {
     } : r).sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0"))));
     setEditRouteId(null);
   };
+  const importPastedRoutes = () => {
+    const parsed = parseRouteText(pasteRoutesText);
+    if (parsed.length === 0) {
+      setPasteRoutesError("No he encontrado rutas. Prueba a pegar columnas con Cut Off, destino, FME, cuadre y salida.");
+      return;
+    }
+    setRoutes(parsed);
+    setPasteRoutesText(""); setPasteRoutesError(""); setShowPasteRoutes(false); setRouteFilter("focus");
+  };
 
   const gcol = (z) => ZC[z.ci % ZC.length];
 
@@ -417,6 +582,7 @@ function App() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
+          <span title="Estado de sincronización" style={{ alignSelf: "center", padding: "6px 8px", borderRadius: 8, border: `1px solid ${syncStatus === "sincronizado" ? "rgba(16,185,129,0.28)" : syncStatus === "local" ? "rgba(245,158,11,0.3)" : "rgba(59,130,246,0.28)"}`, background: syncStatus === "sincronizado" ? "rgba(16,185,129,0.1)" : syncStatus === "local" ? "rgba(245,158,11,0.1)" : "rgba(59,130,246,0.1)", color: syncStatus === "sincronizado" ? "#6ee7b7" : syncStatus === "local" ? "#fbbf24" : "#93c5fd", fontSize: 10, fontWeight: 800 }}>{syncStatus === "sincronizado" ? "Online" : syncStatus === "local" ? "Local" : "Sync"}</span>
           <button title="Nuevo turno" onClick={resetTurno} style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5", borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🔄</button>
           <button title="Configuración" onClick={() => setShowCfg(!showCfg)} style={{ background: showCfg ? "rgba(59,130,246,0.2)" : "rgba(51,65,85,0.5)", border: "1px solid rgba(148,163,184,0.2)", color: S.sub, borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>⚙</button>
         </div>
@@ -954,15 +1120,26 @@ function App() {
           {/* Photo upload */}
           <Card>
             <Lbl>Cargar rutas del día</Lbl>
-            <p style={{ fontSize: 11, color: S.dim, marginBottom: 10 }}>Haz una foto a la hoja de rutas o súbela desde galería.</p>
+            <p style={{ fontSize: 11, color: S.dim, marginBottom: 10 }}>Puedes pegar una tabla/lista o intentar cargar una foto.</p>
             <input ref={routeCamRef} type="file" accept="image/*" capture="environment" onChange={e => { handleRouteImg(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
             <input ref={routeGalRef} type="file" accept="image/*" onChange={e => { handleRouteImg(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
+            <button onClick={() => { setShowPasteRoutes(!showPasteRoutes); setPasteRoutesError(""); }} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid rgba(16,185,129,0.28)", background: "rgba(16,185,129,0.09)", color: "#6ee7b7", fontSize: 13, fontWeight: 800, cursor: "pointer", marginBottom: 8 }}>Pegar rutas</button>
+            {showPasteRoutes && (
+              <div style={{ marginBottom: 10, background: "rgba(15,23,42,0.48)", border: `1px solid ${S.cardBorder}`, borderRadius: 10, padding: 10 }}>
+                <textarea value={pasteRoutesText} onChange={e => { setPasteRoutesText(e.target.value); setPasteRoutesError(""); }} placeholder={"Pega aquí desde Excel, email o WhatsApp.\nEjemplo:\n10:30\tMadrid\t11:00\t11:20\t12:00\n11:30\tBarcelona\t12:00\t12:20\t13:00"} style={{ ...inp, minHeight: 130, resize: "vertical", fontFamily: S.sans, fontSize: 12, lineHeight: 1.35 }} />
+                {pasteRoutesError && <div style={{ color: "#fca5a5", fontSize: 11, marginTop: 6 }}>{pasteRoutesError}</div>}
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button onClick={importPastedRoutes} style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: "#10b981", color: "#052e1a", fontWeight: 800, cursor: "pointer" }}>Importar</button>
+                  <button onClick={() => { setShowPasteRoutes(false); setPasteRoutesText(""); setPasteRoutesError(""); }} style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, fontWeight: 800, cursor: "pointer" }}>Cancelar</button>
+                </div>
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => routeCamRef.current?.click()} disabled={routeImgLoading} style={{ flex: 1, padding: 12, borderRadius: 10, border: "2px dashed rgba(59,130,246,0.3)", background: "rgba(59,130,246,0.05)", color: "#3b82f6", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📷 Cámara</button>
               <button onClick={() => routeGalRef.current?.click()} disabled={routeImgLoading} style={{ flex: 1, padding: 12, borderRadius: 10, border: "2px dashed rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.05)", color: "#a78bfa", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🖼 Galería</button>
             </div>
             {routeImgLoading && <div style={{ marginTop: 10, padding: 10, background: "rgba(59,130,246,0.1)", borderRadius: 8, fontSize: 12, color: "#93c5fd", textAlign: "center" }}>⏳ Leyendo rutas de la imagen...</div>}
-            {routeImgError && <div style={{ marginTop: 10, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8, fontSize: 12, color: "#fca5a5" }}>{routeImgError}</div>}
+            {routeImgError && <div style={{ marginTop: 10, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8, fontSize: 12, color: "#fca5a5" }}>{routeImgError}<div style={{ marginTop: 4, color: S.dim }}>Si la foto falla, usa “Pegar rutas”; no depende del OCR.</div></div>}
           </Card>
 
           {/* Routes list */}
@@ -1008,9 +1185,9 @@ function App() {
             const checks = r.checks || {};
             const isDone = (field) => checks[field] === CHECK_DONE || checks[field] === true;
             const isProgress = (field) => checks[field] === CHECK_PROGRESS;
-            const allDone = isDone("cutoff") && isDone("fme") && isDone("cuadre") && isDone("salida");
-            const hasProgress = ["cutoff", "fme", "cuadre", "salida"].some(isProgress);
-            const hasDone = ["cutoff", "fme", "cuadre", "salida"].some(isDone);
+            const allDone = ROUTE_STEPS.every(isDone);
+            const hasProgress = ROUTE_STEPS.some(isProgress);
+            const hasDone = ROUTE_STEPS.some(isDone);
             const cutM = r.cutoff && r.cutoff.includes(":") ? toM(r.cutoff.padStart(5, "0")) : 0;
             const isUrgent = !isDone("cutoff") && !isProgress("cutoff") && !isCancelled && cutM > 0 && cutM - nowM < 60;
             const toggleCheck = (field) => {
@@ -1069,23 +1246,13 @@ function App() {
                       <button onClick={() => setEditRouteId(null)} style={{ flex: 1, padding: 9, borderRadius: 8, border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, fontWeight: 800, cursor: "pointer" }}>Cancelar</button>
                     </div>
                   </div>
-                ) : <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
-                  <div onClick={() => toggleCheck("cutoff")} style={cellStyle("cutoff")}>
-                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>CUT OFF</div>
-                    {r.cutoff || "—"}
-                  </div>
-                  <div onClick={() => toggleCheck("fme")} style={cellStyle("fme")}>
-                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>FME</div>
-                    {r.fme || "—"}
-                  </div>
-                  <div onClick={() => toggleCheck("cuadre")} style={cellStyle("cuadre")}>
-                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>CUADRE</div>
-                    {r.cuadre || "—"}
-                  </div>
-                  <div onClick={() => toggleCheck("salida")} style={cellStyle("salida")}>
-                    <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>SALIDA</div>
-                    {r.salida || "—"}
-                  </div>
+                ) : <div style={{ display: "grid", gridTemplateColumns: wide ? "repeat(6, 1fr)" : "repeat(3, 1fr)", gap: 4 }}>
+                  {ROUTE_STEPS.map(field => (
+                    <div key={field} onClick={() => toggleCheck(field)} style={cellStyle(field)}>
+                      <div style={{ fontSize: 8, color: S.dim, fontWeight: 600, marginBottom: 2 }}>{ROUTE_LABELS[field]}</div>
+                      {r[field] || (field === "awb" || field === "flejado" ? "OK" : "—")}
+                    </div>
+                  ))}
                 </div>}
                 {r.comment && <div style={{ fontSize: 10, color: "#fbbf24", marginTop: 4 }}>{r.comment}</div>}
               </div>
