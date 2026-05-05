@@ -490,12 +490,10 @@ function App() {
     const progress = routeHasProgress(r);
     const cancelled = r.status === "cancelled";
     const urgent = !cancelled && !done && !progress && cutM !== 9999 && diff < 60;
-    const overdue = urgent && diff < 0;
     const state = cancelled ? "cancelled" : done ? "done" : urgent ? "urgent" : progress ? "progress" : "open";
-    const rank = cancelled ? 5 : done ? 4 : overdue ? 0 : urgent ? 1 : progress ? 2 : 3;
-    return { r, cutM, diff, done, progress, cancelled, urgent, overdue, state, rank };
-  }).sort((a, b) => a.rank - b.rank || a.cutM - b.cutM);
-  const routeVisible = routesMeta.filter(m => routeFilter === "all" || (routeFilter === "focus" && !m.done && !m.cancelled) || routeFilter === m.state);
+    return { r, cutM, diff, done, progress, cancelled, urgent, state };
+  });
+  const routeVisible = routesMeta.filter(m => routeFilter === "all" || (routeFilter === "focus" && !m.cancelled) || routeFilter === m.state);
   const activeRoutes = routesMeta.filter(m => !m.cancelled);
   const routeDoneCount = activeRoutes.filter(m => m.done).length;
   const routeUrgentCount = routesMeta.filter(m => m.urgent).length;
