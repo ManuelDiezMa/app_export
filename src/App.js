@@ -208,7 +208,13 @@ function parseRouteText(text) {
       status: comment ? "cancelled" : "pending",
       comment,
     };
-  }).filter(Boolean).sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0")));
+  }).filter(Boolean)
+    .sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0")))
+    .map((r, order) => ({ ...r, order }));
+}
+
+function routeOrderValue(r, i) {
+  return Number.isFinite(r.order) ? r.order : i;
 }
 
 /* ═══ APP ═══ */
@@ -264,6 +270,16 @@ function App() {
   const applyingRemote = useRef(false);
   const routeCamRef = useRef(null);
   const routeGalRef = useRef(null);
+
+  useEffect(() => {
+    if (routes.some((r, i) => !Number.isFinite(r.order) || r.order !== i)) {
+      const nextRoutes = routes
+        .map((r, i) => ({ ...r, order: routeOrderValue(r, i) }))
+        .sort((a, b) => routeOrderValue(a, 0) - routeOrderValue(b, 0))
+        .map((r, order) => ({ ...r, order }));
+      setRoutes(nextRoutes);
+    }
+  }, [routes, setRoutes]);
 
   useEffect(() => {
     if (!zones.some(z => z.id === "cedidos")) setZones(p => [...p, { id: "cedidos", name: "CEDIDOS", ci: 7 }]);
@@ -414,6 +430,7 @@ function App() {
       if (Array.isArray(parsed) && parsed.length > 0) {
         const newRoutes = parsed.map((r, i) => ({
           id: Date.now() + i,
+          order: i,
           cutoff: r.cutoff || "",
           dest: r.dest || "",
           fme: r.fme || "",
@@ -483,7 +500,7 @@ function App() {
   const actDrops = [...drops].sort((a, b) => toM(a.time) - toM(b.time));
   const nextDr = actDrops.find(d => toM(d.time) > nowM);
   const mToDr = nextDr ? toM(nextDr.time) - nowM : null;
-  const routesMeta = routes.map(r => {
+  const routesMeta = [...routes].sort((a, b) => routeOrderValue(a, 0) - routeOrderValue(b, 0)).map(r => {
     const cutM = r.cutoff && r.cutoff.includes(":") ? toM(r.cutoff.padStart(5, "0")) : 9999;
     const diff = cutM - nowM;
     const done = isRouteDone(r);
@@ -549,7 +566,7 @@ function App() {
       cuadre: normalizeTime(eRCua),
       salida: normalizeTime(eRSal),
       comment: eRCom,
-    } : r).sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0"))));
+    } : r));
     setEditRouteId(null);
   };
   const importPastedRoutes = () => {
@@ -1279,7 +1296,7 @@ function App() {
                 <div><label style={{ fontSize: 10, color: S.dim, display: "block", marginBottom: 3 }}>Salida</label><TimeF value={nRSal} onChange={setNRSal} style={inp} /></div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => { const cutoff = normalizeTime(nRCut); if (nRDest.trim() && cutoff) { const fme = normalizeTime(nRFme), cuadre = normalizeTime(nRCua), salida = normalizeTime(nRSal); setRoutes(p => [...p, { id: Date.now(), cutoff, dest: nRDest.trim(), fme, cuadre, salida, status: "pending", comment: "" }].sort((a, b) => toM(a.cutoff.padStart(5, "0")) - toM(b.cutoff.padStart(5, "0")))); setNRCut(""); setNRDest(""); setNRFme(""); setNRCua(""); setNRSal(""); setShowAddRoute(false); } }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Añadir</button>
+                <button onClick={() => { const cutoff = normalizeTime(nRCut); if (nRDest.trim() && cutoff) { const fme = normalizeTime(nRFme), cuadre = normalizeTime(nRCua), salida = normalizeTime(nRSal); setRoutes(p => [...p, { id: Date.now(), order: p.length, cutoff, dest: nRDest.trim(), fme, cuadre, salida, status: "pending", comment: "" }]); setNRCut(""); setNRDest(""); setNRFme(""); setNRCua(""); setNRSal(""); setShowAddRoute(false); } }} style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: "#3b82f6", color: "#fff", fontWeight: 700, cursor: "pointer" }}>Añadir</button>
                 <button onClick={() => setShowAddRoute(false)} style={{ flex: 1, padding: 10, borderRadius: 8, border: `1px solid ${S.cardBorder}`, background: "transparent", color: S.dim, fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
               </div>
             </Card>
