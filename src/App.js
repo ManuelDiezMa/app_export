@@ -71,20 +71,39 @@ const CHECK_PROGRESS = "progress";
 const CHECK_DONE = "done";
 const ROUTE_STEPS = ["cutoff", "fme", "cuadre", "awb", "flejado", "salida"];
 const ROUTE_LABELS = { cutoff: "CUT OFF", fme: "FME", cuadre: "CUADRE", awb: "AWB", flejado: "FLEJADO", salida: "SALIDA" };
+const TABS = [
+  ["dashboard", "Resumen", "Estado del turno"],
+  ["turno", "Turno", "Personal y carga"],
+  ["situacion", "Seguimiento", "Registro horario"],
+  ["rutas", "Rutas PT", "Control de salidas"],
+];
+const TAB_INFO = {
+  dashboard: { title: "Resumen operativo", desc: "Carga, personal, riesgos y previsión de cierre en una sola vista." },
+  turno: { title: "Preparación del turno", desc: "Introduce la carga inicial y reparte el equipo por departamento." },
+  situacion: { title: "Seguimiento en vivo", desc: "Registra producción real, caídas y ritmo de clasificación." },
+  rutas: { title: "Rutas PT", desc: "Carga rutas, marca estados y mantén el foco en las salidas críticas." },
+};
 
 /* ═══ STYLES ═══ */
 const S = {
-  bg: "#0b1120",
-  card: "rgba(17,24,39,0.82)",
-  cardBorder: "rgba(148,163,184,0.16)",
-  surface: "#1e293b",
-  text: "#f1f5f9",
-  sub: "#cbd5e1",
-  dim: "#8492a6",
+  bg: "#eef3f7",
+  app: "#f8fafc",
+  card: "#ffffff",
+  cardBorder: "rgba(15,23,42,0.10)",
+  surface: "#f1f5f9",
+  text: "#162033",
+  sub: "#475569",
+  dim: "#64748b",
+  muted: "#94a3b8",
+  accent: "#2563eb",
+  accentSoft: "rgba(37,99,235,0.10)",
+  ok: "#059669",
+  warn: "#d97706",
+  bad: "#dc2626",
   mono: "'JetBrains Mono',monospace",
-  sans: "'DM Sans',sans-serif",
+  sans: "'Inter','DM Sans',sans-serif",
 };
-const inp = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(148,163,184,0.24)", background: "rgba(15,23,42,0.72)", color: "#f1f5f9", fontSize: 16, fontWeight: 700, fontFamily: S.mono, boxSizing: "border-box", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)" };
+const inp = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(15,23,42,0.14)", background: "#ffffff", color: S.text, fontSize: 16, fontWeight: 700, fontFamily: S.mono, boxSizing: "border-box", boxShadow: "0 1px 2px rgba(15,23,42,0.04)", outlineColor: S.accent };
 
 /* ═══ COMPONENTS ═══ */
 function NF({ value, onCommit, placeholder, style }) {
@@ -154,20 +173,20 @@ function EC({ count, onChange, warn }) {
   useEffect(() => { if (!ed) sL(String(count)); }, [count, ed]);
   useEffect(() => { if (ed && ref.current) { ref.current.focus(); ref.current.select(); } }, [ed]);
   if (ed) return <input ref={ref} type="text" inputMode="numeric" value={l}
-    style={{ width: 52, height: 32, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: S.mono, border: "2px solid #3b82f6", borderRadius: 8, background: "rgba(59,130,246,0.15)", color: "#f1f5f9", boxSizing: "border-box", outline: "none" }}
+    style={{ width: 52, height: 32, textAlign: "center", fontSize: 15, fontWeight: 800, fontFamily: S.mono, border: `2px solid ${S.accent}`, borderRadius: 8, background: "#ffffff", color: S.text, boxSizing: "border-box", outline: "none" }}
     onChange={e => sL(e.target.value.replace(/[^0-9]/g, ""))}
     onBlur={() => { onChange(parseInt(l) || 0); sEd(false); }}
     onKeyDown={e => { if (e.key === "Enter") { onChange(parseInt(l) || 0); sEd(false); } }} />;
-  return (<div style={{ display: "flex", alignItems: "center", background: warn ? "rgba(239,68,68,0.15)" : "rgba(51,65,85,0.5)", borderRadius: 8, border: `1px solid ${warn ? "rgba(239,68,68,0.3)" : "rgba(71,85,105,0.3)"}` }}>
+  return (<div style={{ display: "flex", alignItems: "center", background: warn ? "rgba(220,38,38,0.08)" : "#f8fafc", borderRadius: 8, border: `1px solid ${warn ? "rgba(220,38,38,0.25)" : "rgba(15,23,42,0.10)"}` }}>
     <button onClick={() => onChange(Math.max(0, count - 1))} style={{ width: 32, height: 32, border: "none", background: "transparent", fontSize: 16, cursor: "pointer", color: S.dim, fontWeight: 700 }}>−</button>
-    <span onClick={() => sEd(true)} style={{ minWidth: 26, textAlign: "center", fontSize: 15, fontWeight: 800, color: warn ? "#fca5a5" : S.text, fontFamily: S.mono, cursor: "pointer" }}>{count}</span>
+    <span onClick={() => sEd(true)} style={{ minWidth: 26, textAlign: "center", fontSize: 15, fontWeight: 800, color: warn ? S.bad : S.text, fontFamily: S.mono, cursor: "pointer" }}>{count}</span>
     <button onClick={() => onChange(count + 1)} style={{ width: 32, height: 32, border: "none", background: "transparent", fontSize: 16, cursor: "pointer", color: S.dim, fontWeight: 700 }}>+</button>
   </div>);
 }
 
-function Card({ children, sx }) { return <div style={{ background: S.card, backdropFilter: "blur(14px)", borderRadius: 12, padding: 16, marginBottom: 12, border: `1px solid ${S.cardBorder}`, boxShadow: "0 14px 34px rgba(0,0,0,0.18)", ...sx }}>{children}</div>; }
-function Lbl({ children }) { return <div style={{ fontSize: 10, fontWeight: 700, color: S.dim, letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8 }}>{children}</div>; }
-function Pill({ color, children }) { return <span style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 700, background: color + "22", color }}>{children}</span>; }
+function Card({ children, sx }) { return <div style={{ background: S.card, borderRadius: 10, padding: 16, marginBottom: 14, border: `1px solid ${S.cardBorder}`, boxShadow: "0 10px 24px rgba(15,23,42,0.07)", ...sx }}>{children}</div>; }
+function Lbl({ children }) { return <div style={{ fontSize: 11, fontWeight: 800, color: S.dim, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 9 }}>{children}</div>; }
+function Pill({ color, children }) { return <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 10, fontWeight: 800, background: color + "18", color, border: `1px solid ${color}24`, whiteSpace: "nowrap" }}>{children}</span>; }
 function toM(t) { const p = t.split(":").map(Number); return p[0] * 60 + (p[1] || 0); }
 function isRouteDone(r) {
   const c = r.checks || {};
@@ -582,29 +601,31 @@ function App() {
   const gcol = (z) => ZC[z.ci % ZC.length];
 
   return (
-    <div style={{ minHeight: "100vh", background: `linear-gradient(180deg, ${S.bg} 0%, #111827 48%, #0b1120 100%)`, fontFamily: S.sans, color: S.text, maxWidth: desktop ? 1220 : wide ? 980 : 520, margin: "0 auto", boxShadow: wide ? "0 0 110px rgba(0,0,0,0.32)" : "0 0 80px rgba(0,0,0,0.28)" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700;9..40,800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet" />
+    <div style={{ minHeight: "100vh", background: S.bg, fontFamily: S.sans, color: S.text }}>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700;800&display=swap" rel="stylesheet" />
 
       {/* HEADER */}
-      <div style={{ padding: wide ? "18px 28px 14px" : "18px 20px 14px", background: "rgba(11,17,32,0.94)", backdropFilter: "blur(20px)", borderBottom: "1px solid rgba(148,163,184,0.14)", position: "sticky", top: 0, zIndex: 100, display: "flex", justifyContent: "space-between", alignItems: "flex-end", boxShadow: "0 10px 28px rgba(0,0,0,0.24)" }}>
+      <div style={{ background: "#ffffff", borderBottom: "1px solid rgba(15,23,42,0.08)", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 8px 24px rgba(15,23,42,0.06)" }}>
+        <div style={{ maxWidth: desktop ? 1220 : wide ? 980 : 560, margin: "0 auto", padding: wide ? "18px 28px 12px" : "14px 16px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
         <div>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 3, color: "#3b82f6" }}>CONTROL DE PERSONAL</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 4 }}>
-            <span style={{ fontSize: 22, fontWeight: 800, background: "linear-gradient(135deg, #f1f5f9, #94a3b8)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Export</span>
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#3b82f6", fontFamily: S.mono }}>{hAct}</span>
-            {mRest > 0 && <span style={{ fontSize: 11, color: mRest > 60 ? "#10b981" : "#ef4444", fontWeight: 700 }}>~{hRest.toFixed(1)}h</span>}
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.8, color: S.accent, textTransform: "uppercase" }}>Control Export</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 3, flexWrap: "wrap" }}>
+            <span style={{ fontSize: wide ? 24 : 21, fontWeight: 800, color: S.text }}>Panel de turno</span>
+            <span style={{ fontSize: 16, fontWeight: 800, color: S.accent, fontFamily: S.mono }}>{hAct}</span>
+            {mRest > 0 && <span style={{ fontSize: 11, color: mRest > 60 ? S.ok : S.bad, fontWeight: 800, background: mRest > 60 ? "rgba(5,150,105,0.09)" : "rgba(220,38,38,0.09)", borderRadius: 999, padding: "3px 7px" }}>~{hRest.toFixed(1)}h</span>}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          <span title="Estado de sincronización" style={{ alignSelf: "center", padding: "6px 8px", borderRadius: 8, border: `1px solid ${syncStatus === "sincronizado" ? "rgba(16,185,129,0.28)" : syncStatus === "local" ? "rgba(245,158,11,0.3)" : "rgba(59,130,246,0.28)"}`, background: syncStatus === "sincronizado" ? "rgba(16,185,129,0.1)" : syncStatus === "local" ? "rgba(245,158,11,0.1)" : "rgba(59,130,246,0.1)", color: syncStatus === "sincronizado" ? "#6ee7b7" : syncStatus === "local" ? "#fbbf24" : "#93c5fd", fontSize: 10, fontWeight: 800 }}>{syncStatus === "sincronizado" ? "Online" : syncStatus === "local" ? "Local" : "Sync"}</span>
-          <button title="Nuevo turno" onClick={resetTurno} style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#fca5a5", borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>🔄</button>
-          <button title="Configuración" onClick={() => setShowCfg(!showCfg)} style={{ background: showCfg ? "rgba(59,130,246,0.2)" : "rgba(51,65,85,0.5)", border: "1px solid rgba(148,163,184,0.2)", color: S.sub, borderRadius: 8, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>⚙</button>
+        <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+          <span title="Estado de sincronización" style={{ alignSelf: "center", padding: "7px 9px", borderRadius: 999, border: `1px solid ${syncStatus === "sincronizado" ? "rgba(5,150,105,0.22)" : syncStatus === "local" ? "rgba(217,119,6,0.24)" : "rgba(37,99,235,0.22)"}`, background: syncStatus === "sincronizado" ? "rgba(5,150,105,0.08)" : syncStatus === "local" ? "rgba(217,119,6,0.09)" : S.accentSoft, color: syncStatus === "sincronizado" ? S.ok : syncStatus === "local" ? S.warn : S.accent, fontSize: 10, fontWeight: 800 }}>{syncStatus === "sincronizado" ? "Online" : syncStatus === "local" ? "Local" : "Sync"}</span>
+          <button title="Nuevo turno" onClick={resetTurno} style={{ background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.20)", color: S.bad, borderRadius: 9, padding: "7px 10px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Nuevo</button>
+          <button title="Configuración" onClick={() => setShowCfg(!showCfg)} style={{ background: showCfg ? S.accentSoft : "#f8fafc", border: `1px solid ${showCfg ? "rgba(37,99,235,0.25)" : S.cardBorder}`, color: showCfg ? S.accent : S.sub, borderRadius: 9, padding: "7px 10px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Ajustes</button>
+        </div>
         </div>
       </div>
 
       {/* CONFIG */}
       {showCfg && (
-        <div style={{ padding: wide ? "14px 28px 18px" : "12px 20px 16px", background: "rgba(17,24,39,0.92)", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>
+        <div style={{ maxWidth: desktop ? 1220 : wide ? 980 : 560, margin: "0 auto", padding: wide ? "14px 28px 18px" : "12px 14px 16px", background: "#ffffff", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>
           <Lbl>Productividad (uds/h)</Lbl>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
             <div><label style={{ fontSize: 11, color: "#3b82f6", marginBottom: 4, display: "block", fontWeight: 700 }}>Media PT AGV / trabajador</label><NF value={objAGV} onCommit={setObjAGV} /></div>
@@ -633,19 +654,30 @@ function App() {
               <TimeF value={nDT} onChange={setNDT} style={{ ...inp, fontSize: 12, padding: 6, width: 80 }} />
               <TF value={nDN} onChange={setNDN} placeholder="Nota" style={{ ...inp, fontSize: 12, padding: 6, flex: 1 }} />
               <button onClick={() => { const t = normalizeTime(nDT); if (t) { setDrops(p => [...p, { id: Date.now(), time: t, note: nDN }]); setNDT(""); setNDN(""); setAddDropOpen(false); } }} style={{ border: "none", background: "#3b82f6", color: "#fff", borderRadius: 6, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+</button>
-              <button onClick={() => setAddDropOpen(false)} style={{ border: "none", background: "rgba(51,65,85,0.5)", color: S.dim, borderRadius: 6, padding: "6px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
+              <button onClick={() => setAddDropOpen(false)} style={{ border: `1px solid ${S.cardBorder}`, background: "#f8fafc", color: S.dim, borderRadius: 6, padding: "6px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
             </div>}
         </div>
       )}
 
       {/* TABS */}
-      <div style={{ display: "flex", gap: 4, padding: wide ? "8px 28px" : "8px 10px", background: "rgba(11,17,32,0.76)", borderBottom: "1px solid rgba(148,163,184,0.14)" }}>
-        {[["dashboard", "Dashboard"], ["turno", "Turno"], ["situacion", "Situación"], ["rutas", "Rutas PT"]].map(([id, l]) => (
-          <button key={id} onClick={() => setTab(id)} style={{ padding: "10px 6px", border: `1px solid ${tab === id ? "rgba(59,130,246,0.35)" : "transparent"}`, borderRadius: 8, background: tab === id ? "rgba(59,130,246,0.14)" : "transparent", color: tab === id ? "#93c5fd" : S.dim, fontSize: 12, fontWeight: 800, cursor: "pointer", flex: 1, textAlign: "center" }}>{l}</button>
+      <div style={{ background: "#ffffff", borderBottom: "1px solid rgba(15,23,42,0.08)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: wide ? 8 : 5, maxWidth: desktop ? 1220 : wide ? 980 : 560, margin: "0 auto", padding: wide ? "8px 28px 10px" : "7px 10px 9px" }}>
+        {TABS.map(([id, l, s]) => (
+          <button key={id} onClick={() => setTab(id)} style={{ minHeight: wide ? 54 : 45, padding: wide ? "8px 10px" : "7px 4px", border: `1px solid ${tab === id ? "rgba(37,99,235,0.28)" : "rgba(15,23,42,0.08)"}`, borderRadius: 10, background: tab === id ? S.accentSoft : "#f8fafc", color: tab === id ? S.accent : S.sub, fontSize: wide ? 13 : 11, fontWeight: 800, cursor: "pointer", textAlign: "left", boxShadow: tab === id ? "inset 0 -2px 0 rgba(37,99,235,0.25)" : "none" }}>
+            <span style={{ display: "block" }}>{l}</span>
+            {wide && <span style={{ display: "block", fontSize: 10, color: tab === id ? S.accent : S.dim, fontWeight: 600, marginTop: 2 }}>{s}</span>}
+          </button>
         ))}
+        </div>
       </div>
 
-      <div style={{ padding: wide ? "18px 28px 100px" : "16px 20px 100px" }}>
+      <div style={{ maxWidth: desktop ? 1220 : wide ? 980 : 560, margin: "0 auto", padding: wide ? "18px 28px 100px" : "14px 14px 100px" }}>
+        <div style={{ marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: wide ? 22 : 19, fontWeight: 800, color: S.text }}>{TAB_INFO[tab].title}</div>
+            <div style={{ fontSize: 12, color: S.dim, marginTop: 3, lineHeight: 1.35 }}>{TAB_INFO[tab].desc}</div>
+          </div>
+        </div>
 
         {/* ═══ DASHBOARD ═══ */}
         {tab === "dashboard" && (<>
@@ -654,9 +686,9 @@ function App() {
           {/* KPIs */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: wide ? 10 : 6, marginBottom: 14 }}>
             {[{ l: "Por Picar", v: pP, c: "#ef4444" }, { l: "Por Clasif.", v: pC, c: "#f59e0b" }, { l: "Pdt RFID", v: pR, c: "#a78bfa" }, { l: "Personas", v: asig, c: "#3b82f6" }].map(k => (
-              <div key={k.l} style={{ background: S.card, borderRadius: 12, padding: "10px 4px", textAlign: "center", border: `1px solid ${S.cardBorder}` }}>
-                <div style={{ fontSize: 8, color: S.dim, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>{k.l}</div>
-                <div style={{ fontSize: 16, fontWeight: 800, color: k.c, fontFamily: S.mono, marginTop: 3 }}>{k.v.toLocaleString()}</div>
+              <div key={k.l} style={{ background: S.card, borderRadius: 10, padding: wide ? "12px 10px" : "10px 7px", textAlign: "left", border: `1px solid ${S.cardBorder}`, borderTop: `3px solid ${k.c}`, boxShadow: "0 8px 18px rgba(15,23,42,0.06)" }}>
+                <div style={{ fontSize: 9, color: S.dim, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.3, whiteSpace: "nowrap" }}>{k.l}</div>
+                <div style={{ fontSize: wide ? 22 : 17, fontWeight: 800, color: k.c, fontFamily: S.mono, marginTop: 5 }}>{k.v.toLocaleString()}</div>
               </div>
             ))}
           </div>
@@ -679,9 +711,9 @@ function App() {
                 <div style={{ fontSize: 12, color: S.sub }}>Sin riesgos claros con los datos actuales. Vigila las próximas rutas y el primer registro real de productividad.</div>
               )}
               {nextRoute && (
-                <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: nextRoute.urgent ? "rgba(239,68,68,0.12)" : "rgba(59,130,246,0.1)", display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, background: nextRoute.urgent ? "rgba(220,38,38,0.08)" : S.accentSoft, display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <span style={{ fontSize: 11, color: S.sub, fontWeight: 700 }}>Próxima ruta: {nextRoute.r.dest}</span>
-                  <span style={{ fontSize: 11, color: nextRoute.urgent ? "#fca5a5" : "#93c5fd", fontWeight: 800, fontFamily: S.mono }}>{timeLabel(nextRoute.diff)}</span>
+                  <span style={{ fontSize: 11, color: nextRoute.urgent ? S.bad : S.accent, fontWeight: 800, fontFamily: S.mono }}>{timeLabel(nextRoute.diff)}</span>
                 </div>
               )}
             </Card>
@@ -711,8 +743,8 @@ function App() {
                   ))}
                 </div>
               </div>
-              {tExt > 0 && <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(71,85,105,0.3)", fontSize: 10, color: TC.tarea_extra, fontWeight: 700 }}>EXTRA ({tExt}) — no cuenta para TPH</div>}
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(71,85,105,0.3)", fontSize: 12, fontWeight: 700 }}>
+              {tExt > 0 && <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${S.cardBorder}`, fontSize: 10, color: TC.tarea_extra, fontWeight: 700 }}>EXTRA ({tExt}) — no cuenta para TPH</div>}
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, paddingTop: 8, borderTop: `1px solid ${S.cardBorder}`, fontSize: 12, fontWeight: 700 }}>
                 <span style={{ color: S.sub }}>TPI <span style={{ fontFamily: S.mono, color: tDir > 0 && tInd / tDir > 0.5 ? "#ef4444" : "#10b981" }}>{tpi}</span></span>
                 <span>{sinA === 0 && tG > 0 ? <span style={{ color: "#10b981" }}>✓</span> : sinA > 0 ? <span style={{ color: "#f59e0b" }}>{sinA} libres</span> : sinA < 0 ? <span style={{ color: "#ef4444" }}>{Math.abs(sinA)} extra</span> : null}</span>
               </div>
@@ -735,9 +767,9 @@ function App() {
                   <div style={{ fontSize: 9, color: S.dim }}>uds/h</div>
                 </div>
               </div>
-              {pAGV > 0 && rAGV < rNeed && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: "rgba(239,68,68,0.1)", color: "#fca5a5" }}>🏃 Runners: {rAGV}/{rNeed}</div>}
-              {capH < salT + pC ? <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: "rgba(239,68,68,0.1)", color: "#fca5a5" }}>⚠ Cuello de botella clasificación</div>
-                : clTot > 0 && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 600, background: "rgba(16,185,129,0.1)", color: "#6ee7b7" }}>✓ Clasificación absorbe</div>}
+              {pAGV > 0 && rAGV < rNeed && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "rgba(220,38,38,0.08)", color: S.bad }}>Runners: {rAGV}/{rNeed}</div>}
+              {capH < salT + pC ? <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "rgba(220,38,38,0.08)", color: S.bad }}>Cuello de botella clasificación</div>
+                : clTot > 0 && <div style={{ padding: "6px 10px", borderRadius: 8, fontSize: 11, fontWeight: 700, background: "rgba(5,150,105,0.08)", color: S.ok }}>Clasificación absorbe</div>}
             </Card>
           )}
             </div>
@@ -753,7 +785,7 @@ function App() {
                   <div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>TPH ESPERADO</div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: "#14b8a6", fontFamily: S.mono, marginTop: 2 }}>{salT > 0 ? (salT / (tDir + tInd)).toFixed(1) : "—"}</div>
                 </div>
-                <div style={{ background: hourLogs.length > 0 ? "rgba(20,184,166,0.1)" : "rgba(51,65,85,0.3)", borderRadius: 12, padding: 10, textAlign: "center", border: `1px solid ${hourLogs.length > 0 ? "rgba(20,184,166,0.2)" : "rgba(71,85,105,0.2)"}` }}>
+                <div style={{ background: hourLogs.length > 0 ? "rgba(20,184,166,0.1)" : "#f8fafc", borderRadius: 12, padding: 10, textAlign: "center", border: `1px solid ${hourLogs.length > 0 ? "rgba(20,184,166,0.2)" : S.cardBorder}` }}>
                   <div style={{ fontSize: 9, color: S.dim, fontWeight: 700 }}>TPH REAL</div>
                   <div style={{ fontSize: 22, fontWeight: 800, color: hourLogs.length > 0 ? "#14b8a6" : S.dim, fontFamily: S.mono, marginTop: 2 }}>{tphAcum}</div>
                   <div style={{ fontSize: 9, color: S.dim }}>{hourLogs.length > 0 ? `${hourLogs.length}h registradas` : "Sin datos"}</div>
@@ -776,7 +808,7 @@ function App() {
                     </div>
                   </div>
                   {/* Totals */}
-                  <div style={{ background: "rgba(51,65,85,0.3)", borderRadius: 10, padding: "8px 12px", display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                  <div style={{ background: "#f8fafc", borderRadius: 10, padding: "8px 12px", display: "flex", justifyContent: "space-between", fontSize: 12 }}>
                     <span style={{ color: S.sub }}>Total acumulado</span>
                     <span style={{ fontFamily: S.mono, fontWeight: 700 }}>
                       <span style={{ color: "#3b82f6" }}>{totPicR.toLocaleString()}</span>
@@ -806,20 +838,20 @@ function App() {
             <Card sx={{ borderLeft: "3px solid #3b82f6" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <Lbl>Proyección ~{finT}</Lbl>
-                <div style={{ display: "flex", gap: 4, background: "rgba(15,23,42,0.6)", padding: 3, borderRadius: 8 }}>
+                <div style={{ display: "flex", gap: 4, background: "#f1f5f9", padding: 3, borderRadius: 8 }}>
                   {[["plan", "Plan"], ["mix", "Mixto"], ["real", "Real"]].map(([id, l]) => (
-                    <button key={id} onClick={() => setProjectionMode(id)} style={{ border: "none", borderRadius: 6, padding: "4px 7px", background: projectionMode === id ? "rgba(59,130,246,0.22)" : "transparent", color: projectionMode === id ? "#93c5fd" : S.dim, fontSize: 10, fontWeight: 800, cursor: "pointer" }}>{l}</button>
+                    <button key={id} onClick={() => setProjectionMode(id)} style={{ border: "none", borderRadius: 6, padding: "4px 7px", background: projectionMode === id ? "#ffffff" : "transparent", color: projectionMode === id ? S.accent : S.dim, fontSize: 10, fontWeight: 800, cursor: "pointer", boxShadow: projectionMode === id ? "0 1px 3px rgba(15,23,42,0.08)" : "none" }}>{l}</button>
                   ))}
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
                 <div style={{ background: "rgba(59,130,246,0.08)", borderRadius: 8, padding: "6px 8px", border: "1px solid rgba(59,130,246,0.16)" }}>
                   <div style={{ fontSize: 8, color: S.dim, fontWeight: 800 }}>PICADO USADO</div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#93c5fd", fontFamily: S.mono }}>{activePH.toLocaleString()} uds/h</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: S.accent, fontFamily: S.mono }}>{activePH.toLocaleString()} uds/h</div>
                 </div>
                 <div style={{ background: "rgba(16,185,129,0.08)", borderRadius: 8, padding: "6px 8px", border: "1px solid rgba(16,185,129,0.16)" }}>
                   <div style={{ fontSize: 8, color: S.dim, fontWeight: 800 }}>CLASIF. USADA</div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#6ee7b7", fontFamily: S.mono }}>{activeCH.toLocaleString()} uds/h</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: S.ok, fontFamily: S.mono }}>{activeCH.toLocaleString()} uds/h</div>
                 </div>
               </div>
               <div style={{ background: "rgba(245,158,11,0.08)", borderRadius: 8, padding: "6px 8px", border: "1px solid rgba(245,158,11,0.16)", marginBottom: 8, display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -879,7 +911,7 @@ function App() {
 
           {tG > 0 && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: sinA === 0 ? "rgba(16,185,129,0.1)" : sinA < 0 ? "rgba(239,68,68,0.1)" : "rgba(245,158,11,0.1)", borderRadius: 10, padding: "10px 14px", marginBottom: 12, border: `1px solid ${sinA === 0 ? "rgba(16,185,129,0.2)" : sinA < 0 ? "rgba(239,68,68,0.2)" : "rgba(245,158,11,0.2)"}` }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: sinA === 0 ? "#6ee7b7" : sinA < 0 ? "#fca5a5" : "#fcd34d" }}>{sinA === 0 ? "✓ Todos" : sinA > 0 ? `${sinA} libres` : `${Math.abs(sinA)} extra`}</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: sinA === 0 ? S.ok : sinA < 0 ? S.bad : S.warn }}>{sinA === 0 ? "✓ Todos" : sinA > 0 ? `${sinA} libres` : `${Math.abs(sinA)} extra`}</span>
               <div style={{ display: "flex", gap: 6, fontSize: 11 }}>
                 <Pill color={TC.directo}>{tDir} dir</Pill>
                 <Pill color={TC.indirecto}>{tInd} ind</Pill>
@@ -912,7 +944,7 @@ function App() {
                     <div style={{ display: "flex", gap: 4, flex: 1, alignItems: "center" }}>
                       <TF value={eZN} onChange={setEZN} placeholder="Nombre" style={{ ...inp, fontSize: 12, padding: "5px 8px", flex: 1 }} />
                       <button onClick={() => { if (eZN.trim()) { setZones(p => p.map(z => z.id === zone.id ? { ...z, name: eZN.trim() } : z)); setEZone(null); } }} style={{ border: "none", background: "#10b981", color: "#fff", borderRadius: 6, padding: "5px 8px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✓</button>
-                      <button onClick={() => setEZone(null)} style={{ border: "none", background: "rgba(51,65,85,0.5)", color: S.dim, borderRadius: 6, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
+                      <button onClick={() => setEZone(null)} style={{ border: `1px solid ${S.cardBorder}`, background: "#f8fafc", color: S.dim, borderRadius: 6, padding: "5px 8px", fontSize: 11, cursor: "pointer" }}>✕</button>
                     </div>
                   ) : (<>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -1018,7 +1050,7 @@ function App() {
                   <span style={{ marginLeft: 4 }}>({Math.max(0, hlPC + hlC - pC).toLocaleString()} uds nuevas a clasif.)</span>
                 </div>
               )}
-              <div style={{ fontSize: 11, color: S.dim, marginBottom: 10, background: "rgba(51,65,85,0.3)", padding: 8, borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: S.dim, marginBottom: 10, background: "#f8fafc", padding: 8, borderRadius: 8 }}>
                 Esperado: <b style={{ color: "#3b82f6" }}>{salT.toLocaleString()}</b> pic · <b style={{ color: "#10b981" }}>{capH.toLocaleString()}</b> cla · ratio activo <b style={{ color: "#fbbf24" }}>{activeClasifPct}%</b>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
@@ -1035,7 +1067,7 @@ function App() {
                 <div><label style={{ fontSize: 10, color: "#ef4444", display: "block", marginBottom: 4 }}>Pend. picar (acumulado)</label><NF value={dlP} onCommit={setDlP} /></div>
                 <div><label style={{ fontSize: 10, color: "#a78bfa", display: "block", marginBottom: 4 }}>Pend. RFID (acumulado)</label><NF value={dlR} onCommit={setDlR} /></div>
               </div>
-              <div style={{ fontSize: 11, color: S.dim, marginBottom: 10, background: "rgba(51,65,85,0.3)", padding: 8, borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: S.dim, marginBottom: 10, background: "#f8fafc", padding: 8, borderRadius: 8 }}>
                 Pend. clasificar se mantiene: <b style={{ color: "#f59e0b" }}>{pC.toLocaleString()}</b>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
@@ -1134,12 +1166,12 @@ function App() {
           {/* Photo upload */}
           <Card>
             <Lbl>Cargar rutas del día</Lbl>
-            <p style={{ fontSize: 11, color: S.dim, marginBottom: 10 }}>Puedes pegar una tabla/lista o intentar cargar una foto.</p>
+            <p style={{ fontSize: 12, color: S.dim, marginTop: -2, marginBottom: 10, lineHeight: 1.35 }}>Pega las rutas desde una tabla o lista. La foto queda como apoyo si necesitas probar OCR.</p>
             <input ref={routeCamRef} type="file" accept="image/*" capture="environment" onChange={e => { handleRouteImg(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
             <input ref={routeGalRef} type="file" accept="image/*" onChange={e => { handleRouteImg(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
             <button onClick={() => { setShowPasteRoutes(!showPasteRoutes); setPasteRoutesError(""); }} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid rgba(16,185,129,0.28)", background: "rgba(16,185,129,0.09)", color: "#6ee7b7", fontSize: 13, fontWeight: 800, cursor: "pointer", marginBottom: 8 }}>Pegar rutas</button>
             {showPasteRoutes && (
-              <div style={{ marginBottom: 10, background: "rgba(15,23,42,0.48)", border: `1px solid ${S.cardBorder}`, borderRadius: 10, padding: 10 }}>
+              <div style={{ marginBottom: 10, background: "#f8fafc", border: `1px solid ${S.cardBorder}`, borderRadius: 10, padding: 10 }}>
                 <textarea value={pasteRoutesText} onChange={e => { setPasteRoutesText(e.target.value); setPasteRoutesError(""); }} placeholder={"Pega aquí desde Excel, email o WhatsApp.\nEjemplo:\n10:30\tMadrid\t11:00\t11:20\t12:00\n11:30\tBarcelona\t12:00\t12:20\t13:00"} style={{ ...inp, minHeight: 130, resize: "vertical", fontFamily: S.sans, fontSize: 12, lineHeight: 1.35 }} />
                 {pasteRoutesError && <div style={{ color: "#fca5a5", fontSize: 11, marginTop: 6 }}>{pasteRoutesError}</div>}
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
@@ -1152,8 +1184,8 @@ function App() {
               <button onClick={() => routeCamRef.current?.click()} disabled={routeImgLoading} style={{ flex: 1, padding: 12, borderRadius: 10, border: "2px dashed rgba(59,130,246,0.3)", background: "rgba(59,130,246,0.05)", color: "#3b82f6", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>📷 Cámara</button>
               <button onClick={() => routeGalRef.current?.click()} disabled={routeImgLoading} style={{ flex: 1, padding: 12, borderRadius: 10, border: "2px dashed rgba(167,139,250,0.3)", background: "rgba(167,139,250,0.05)", color: "#a78bfa", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>🖼 Galería</button>
             </div>
-            {routeImgLoading && <div style={{ marginTop: 10, padding: 10, background: "rgba(59,130,246,0.1)", borderRadius: 8, fontSize: 12, color: "#93c5fd", textAlign: "center" }}>⏳ Leyendo rutas de la imagen...</div>}
-            {routeImgError && <div style={{ marginTop: 10, padding: 10, background: "rgba(239,68,68,0.1)", borderRadius: 8, fontSize: 12, color: "#fca5a5" }}>{routeImgError}<div style={{ marginTop: 4, color: S.dim }}>Si la foto falla, usa “Pegar rutas”; no depende del OCR.</div></div>}
+            {routeImgLoading && <div style={{ marginTop: 10, padding: 10, background: S.accentSoft, borderRadius: 8, fontSize: 12, color: S.accent, textAlign: "center", fontWeight: 700 }}>Leyendo rutas de la imagen...</div>}
+            {routeImgError && <div style={{ marginTop: 10, padding: 10, background: "rgba(220,38,38,0.08)", borderRadius: 8, fontSize: 12, color: S.bad }}>{routeImgError}<div style={{ marginTop: 4, color: S.dim }}>Si la foto falla, usa “Pegar rutas”; no depende del OCR.</div></div>}
           </Card>
 
           {/* Routes list */}
@@ -1169,6 +1201,11 @@ function App() {
               <div style={{ display: "flex", height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 12, background: "rgba(51,65,85,0.3)" }}>
                 <div style={{ width: `${activeRoutes.length > 0 ? (routeDoneCount / activeRoutes.length) * 100 : 0}%`, background: "#10b981", transition: "width 0.3s" }} />
               </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10, fontSize: 10, color: S.dim, fontWeight: 700 }}>
+                <span><b style={{ color: S.warn }}>Amarillo</b> 1 toque</span>
+                <span><b style={{ color: S.ok }}>Verde</b> 2 toques</span>
+                <span><b style={{ color: S.bad }}>Rojo</b> urgente/vencida</span>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
                 {[{ l: "Rojo", v: routeUrgentCount, c: "#ef4444" }, { l: "En curso", v: routeProgressCount, c: "#f59e0b" }, { l: "Listas", v: routeDoneCount, c: "#10b981" }].map(k => (
                   <div key={k.l} style={{ background: `${k.c}10`, border: `1px solid ${k.c}24`, borderRadius: 8, padding: "7px 6px", textAlign: "center" }}>
@@ -1180,12 +1217,12 @@ function App() {
               {nextRoute && (
                 <div style={{ background: nextRoute.urgent ? "rgba(239,68,68,0.1)" : "rgba(59,130,246,0.08)", border: `1px solid ${nextRoute.urgent ? "rgba(239,68,68,0.22)" : "rgba(59,130,246,0.16)"}`, borderRadius: 8, padding: "8px 10px", marginBottom: 10, display: "flex", justifyContent: "space-between", gap: 8 }}>
                   <span style={{ fontSize: 11, color: S.sub, fontWeight: 700 }}>Siguiente foco: {nextRoute.r.dest}</span>
-                  <span style={{ fontSize: 11, color: nextRoute.urgent ? "#fca5a5" : "#93c5fd", fontWeight: 800, fontFamily: S.mono }}>{timeLabel(nextRoute.diff)}</span>
+                  <span style={{ fontSize: 11, color: nextRoute.urgent ? S.bad : S.accent, fontWeight: 800, fontFamily: S.mono }}>{timeLabel(nextRoute.diff)}</span>
                 </div>
               )}
               <div style={{ display: "flex", gap: 4, overflowX: "auto" }}>
                 {[["focus", "Foco"], ["urgent", "Rojo"], ["progress", "Curso"], ["done", "Listas"], ["all", "Todas"]].map(([id, l]) => (
-                  <button key={id} onClick={() => setRouteFilter(id)} style={{ border: `1px solid ${routeFilter === id ? "rgba(59,130,246,0.32)" : S.cardBorder}`, borderRadius: 8, padding: "6px 8px", background: routeFilter === id ? "rgba(59,130,246,0.16)" : "rgba(15,23,42,0.35)", color: routeFilter === id ? "#93c5fd" : S.dim, fontSize: 10, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>{l}</button>
+                  <button key={id} onClick={() => setRouteFilter(id)} style={{ border: `1px solid ${routeFilter === id ? "rgba(37,99,235,0.28)" : S.cardBorder}`, borderRadius: 999, padding: "7px 10px", background: routeFilter === id ? S.accentSoft : "#f8fafc", color: routeFilter === id ? S.accent : S.dim, fontSize: 10, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>{l}</button>
                 ))}
               </div>
             </Card>
@@ -1217,34 +1254,34 @@ function App() {
             };
             const cellStyle = (field) => ({
               padding: "7px 4px", textAlign: "center", fontSize: 11, fontFamily: S.mono, fontWeight: 800, cursor: "pointer", borderRadius: 8, transition: "all 0.15s", minHeight: 44,
-              background: isDone(field) ? "rgba(16,185,129,0.2)" : isProgress(field) ? "rgba(245,158,11,0.18)" : "rgba(15,23,42,0.42)",
-              border: `1px solid ${isDone(field) ? "rgba(16,185,129,0.32)" : isProgress(field) ? "rgba(245,158,11,0.34)" : "rgba(148,163,184,0.1)"}`,
-              color: isDone(field) ? "#6ee7b7" : isProgress(field) ? "#fbbf24" : isCancelled ? S.dim : S.sub,
+              background: isDone(field) ? "rgba(5,150,105,0.10)" : isProgress(field) ? "rgba(217,119,6,0.12)" : "#f8fafc",
+              border: `1px solid ${isDone(field) ? "rgba(5,150,105,0.24)" : isProgress(field) ? "rgba(217,119,6,0.28)" : "rgba(15,23,42,0.08)"}`,
+              color: isDone(field) ? S.ok : isProgress(field) ? S.warn : isCancelled ? S.dim : S.sub,
               textDecoration: isCancelled ? "line-through" : "none",
-              boxShadow: isDone(field) || isProgress(field) ? "inset 0 1px 0 rgba(255,255,255,0.04)" : "none",
+              boxShadow: isDone(field) || isProgress(field) ? "inset 0 1px 0 rgba(255,255,255,0.65)" : "none",
             });
             return (
               <div key={r.id} style={{
-                background: allDone ? "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(17,24,39,0.82))" : isCancelled ? "rgba(51,65,85,0.15)" : isUrgent ? "linear-gradient(135deg, rgba(239,68,68,0.12), rgba(17,24,39,0.82))" : hasProgress ? "linear-gradient(135deg, rgba(245,158,11,0.1), rgba(17,24,39,0.82))" : S.card,
-                borderRadius: 12, marginBottom: 8, border: `1px solid ${allDone ? "rgba(16,185,129,0.24)" : isUrgent ? "rgba(239,68,68,0.3)" : hasProgress ? "rgba(245,158,11,0.28)" : S.cardBorder}`,
-                borderLeft: `4px solid ${allDone ? "#10b981" : isUrgent ? "#ef4444" : hasProgress ? "#f59e0b" : hasDone ? "#3b82f6" : "rgba(148,163,184,0.22)"}`,
-                padding: "9px 10px", opacity: isCancelled ? 0.4 : 1, boxShadow: "0 10px 24px rgba(0,0,0,0.15)",
+                background: allDone ? "linear-gradient(135deg, rgba(5,150,105,0.08), #ffffff)" : isCancelled ? "#f1f5f9" : isUrgent ? "linear-gradient(135deg, rgba(220,38,38,0.09), #ffffff)" : hasProgress ? "linear-gradient(135deg, rgba(217,119,6,0.09), #ffffff)" : S.card,
+                borderRadius: 10, marginBottom: 9, border: `1px solid ${allDone ? "rgba(5,150,105,0.22)" : isUrgent ? "rgba(220,38,38,0.26)" : hasProgress ? "rgba(217,119,6,0.24)" : S.cardBorder}`,
+                borderLeft: `5px solid ${allDone ? S.ok : isUrgent ? S.bad : hasProgress ? S.warn : hasDone ? S.accent : "rgba(100,116,139,0.30)"}`,
+                padding: "10px 11px", opacity: isCancelled ? 0.52 : 1, boxShadow: "0 8px 20px rgba(15,23,42,0.07)",
               }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: allDone ? "#6ee7b7" : isUrgent ? "#ef4444" : S.text, textDecoration: isCancelled ? "line-through" : allDone ? "line-through" : "none" }}>{r.dest}</span>
-                    {isUrgent && <span style={{ fontSize: 8, color: "#ef4444", fontWeight: 800, background: "rgba(239,68,68,0.15)", padding: "2px 6px", borderRadius: 4 }}>URGENTE</span>}
-                    {hasProgress && !isUrgent && !allDone && <span style={{ fontSize: 8, color: "#fbbf24", fontWeight: 800, background: "rgba(245,158,11,0.14)", padding: "2px 6px", borderRadius: 4 }}>EN CURSO</span>}
-                    {allDone && <span style={{ fontSize: 8, color: "#6ee7b7", fontWeight: 800 }}>✓</span>}
+                    <span style={{ fontSize: 14, fontWeight: 800, color: allDone ? S.ok : isUrgent ? S.bad : S.text, textDecoration: isCancelled ? "line-through" : allDone ? "line-through" : "none" }}>{r.dest}</span>
+                    {isUrgent && <span style={{ fontSize: 8, color: S.bad, fontWeight: 800, background: "rgba(220,38,38,0.10)", padding: "2px 6px", borderRadius: 999 }}>URGENTE</span>}
+                    {hasProgress && !isUrgent && !allDone && <span style={{ fontSize: 8, color: S.warn, fontWeight: 800, background: "rgba(217,119,6,0.10)", padding: "2px 6px", borderRadius: 999 }}>EN CURSO</span>}
+                    {allDone && <span style={{ fontSize: 8, color: S.ok, fontWeight: 800 }}>✓</span>}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    {!isCancelled && !allDone && r.cutoff && <span style={{ fontSize: 10, fontFamily: S.mono, fontWeight: 800, color: isUrgent ? "#fca5a5" : "#93c5fd", background: isUrgent ? "rgba(239,68,68,0.14)" : "rgba(59,130,246,0.1)", borderRadius: 6, padding: "3px 6px" }}>{timeLabel(diff)}</span>}
-                    <button onClick={() => startEditRoute(r)} style={{ background: "rgba(148,163,184,0.08)", border: `1px solid ${S.cardBorder}`, color: S.sub, borderRadius: 6, fontSize: 10, fontWeight: 800, cursor: "pointer", padding: "4px 6px" }}>Editar</button>
+                    {!isCancelled && !allDone && r.cutoff && <span style={{ fontSize: 10, fontFamily: S.mono, fontWeight: 800, color: isUrgent ? S.bad : S.accent, background: isUrgent ? "rgba(220,38,38,0.09)" : S.accentSoft, borderRadius: 999, padding: "4px 7px" }}>{timeLabel(diff)}</span>}
+                    <button onClick={() => startEditRoute(r)} style={{ background: "#f8fafc", border: `1px solid ${S.cardBorder}`, color: S.sub, borderRadius: 7, fontSize: 10, fontWeight: 800, cursor: "pointer", padding: "5px 7px" }}>Editar</button>
                     <button onClick={() => setRoutes(p => p.map(x => x.id === r.id ? { ...x, status: x.status === "cancelled" ? "pending" : "cancelled", checks: {} } : x))} style={{ background: "none", border: "none", color: S.dim, fontSize: 12, cursor: "pointer" }}>✕</button>
                   </div>
                 </div>
                 {editRouteId === r.id ? (
-                  <div style={{ background: "rgba(15,23,42,0.52)", border: `1px solid ${S.cardBorder}`, borderRadius: 10, padding: 10 }}>
+                  <div style={{ background: "#f8fafc", border: `1px solid ${S.cardBorder}`, borderRadius: 10, padding: 10 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
                       <div><label style={{ fontSize: 9, color: S.dim, display: "block", marginBottom: 3 }}>Cut Off</label><TimeF value={eRCut} onChange={setERCut} style={{ ...inp, fontSize: 13, padding: 8 }} /></div>
                       <div><label style={{ fontSize: 9, color: S.dim, display: "block", marginBottom: 3 }}>Destino</label><TF value={eRDest} onChange={setERDest} placeholder="Destino" style={{ ...inp, fontSize: 13, padding: 8, fontFamily: S.sans }} /></div>
@@ -1277,7 +1314,7 @@ function App() {
           {routes.length > 0 && routeVisible.length === 0 && (
             <Card sx={{ textAlign: "center", padding: "18px 16px" }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: S.sub }}>No hay rutas en este filtro</div>
-              <button onClick={() => setRouteFilter("focus")} style={{ marginTop: 8, border: `1px solid ${S.cardBorder}`, background: "rgba(59,130,246,0.12)", color: "#93c5fd", borderRadius: 8, padding: "7px 10px", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>Ver foco</button>
+              <button onClick={() => setRouteFilter("focus")} style={{ marginTop: 8, border: `1px solid ${S.cardBorder}`, background: S.accentSoft, color: S.accent, borderRadius: 8, padding: "7px 10px", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>Ver foco</button>
             </Card>
           )}
 
@@ -1304,8 +1341,8 @@ function App() {
 
           {routes.length > 0 && (
             <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button onClick={() => { if (window.confirm("¿Resetear todas las rutas a pendiente?")) setRoutes(p => p.map(r => ({ ...r, status: "pending", checks: {} }))); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: "rgba(51,65,85,0.3)", color: S.dim, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🔄 Resetear</button>
-              <button onClick={() => { if (window.confirm("¿Borrar todas las rutas?")) setRoutes([]); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: "rgba(239,68,68,0.1)", color: "#fca5a5", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🗑 Borrar todas</button>
+              <button onClick={() => { if (window.confirm("¿Resetear todas las rutas a pendiente?")) setRoutes(p => p.map(r => ({ ...r, status: "pending", checks: {} }))); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: `1px solid ${S.cardBorder}`, background: "#f8fafc", color: S.dim, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Resetear</button>
+              <button onClick={() => { if (window.confirm("¿Borrar todas las rutas?")) setRoutes([]); }} style={{ flex: 1, padding: 10, borderRadius: 10, border: "none", background: "rgba(220,38,38,0.08)", color: S.bad, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Borrar todas</button>
             </div>
           )}
 
@@ -1320,6 +1357,15 @@ function App() {
           </div>
         </>)}
       </div>
+      {!wide && (
+        <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 120, background: "rgba(255,255,255,0.96)", borderTop: "1px solid rgba(15,23,42,0.10)", boxShadow: "0 -10px 26px rgba(15,23,42,0.10)", padding: "8px 8px 10px" }}>
+          <div style={{ maxWidth: 560, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+            {TABS.map(([id, l]) => (
+              <button key={id} onClick={() => setTab(id)} style={{ border: "none", borderRadius: 10, background: tab === id ? S.accentSoft : "transparent", color: tab === id ? S.accent : S.dim, padding: "8px 2px", fontSize: 10, fontWeight: 800, cursor: "pointer" }}>{l}</button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
